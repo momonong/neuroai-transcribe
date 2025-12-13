@@ -3,11 +3,12 @@ import json
 import torch
 import pathlib
 import warnings
+import gc
 from dotenv import load_dotenv
 
 # --- 1. 設定環境 ---
 load_dotenv()
-MODEL_ROOT = r"D:\hf_models"
+MODEL_ROOT = os.getenv("MODEL_CACHE_DIR")
 os.environ["HF_HOME"] = MODEL_ROOT
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
@@ -97,8 +98,12 @@ class PipelinePhase2:
             json.dump(results, f, ensure_ascii=False, indent=2)
         
         print(f"✅ Whisper done. Saved to {output_json_path}")
+
+        # 徹底釋放記憶體的三連擊
         del model
-        torch.cuda.empty_cache()
+        gc.collect() # 強制 Python 回收記憶體物件
+        torch.cuda.empty_cache() # 強制 PyTorch 釋放 VRAM
+        print("🧹 VRAM cleaned.")
 
     # --- Step 2: Pyannote ---
     def run_diarization(self, audio_path, output_json_path):
@@ -137,9 +142,12 @@ class PipelinePhase2:
             json.dump(diar_segments, f, ensure_ascii=False, indent=2)
 
         print(f"✅ Diarization done. Saved to {output_json_path}")
-        del pipeline
-        torch.cuda.empty_cache()
 
+        # 徹底釋放記憶體的三連擊
+        del pipeline
+        gc.collect() # 強制 Python 回收記憶體物件
+        torch.cuda.empty_cache() # 強制 PyTorch 釋放 VRAM
+        print("🧹 VRAM cleaned.")
     # --- Step 3: 邏輯對齊 ---
     def run_alignment(self, whisper_json, diar_json, final_output_path, chunk_offset_sec=0):
         print(f"🔗 [Step 3] Aligning text with speakers...")
@@ -189,7 +197,7 @@ class PipelinePhase2:
 
 # --- 執行區塊 ---
 if __name__ == "__main__":
-    target_wav = "data/temp_chunks/chunk_1_0_531989.wav" 
+    target_wav = "data/temp_chunks/chunk_4_1606067_2171157.wav" 
     
     base_name = os.path.splitext(target_wav)[0]
     json_whisper = f"{base_name}_whisper.json"
