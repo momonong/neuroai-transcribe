@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # --- 設定 ---
-INPUT_FILE = "data/temp_chunks/chunk_3_1100278_1606067_verified_dataset.json"
-OUTPUT_FILE = "data/temp_chunks/chunk_3_1100278_1606067_flagged_for_human.json"
+INPUT_FILE = "data/temp_chunks/chunk_1_0_747928_verified_dataset.json"
+OUTPUT_FILE = "data/temp_chunks/chunk_1_0_747928_flagged_for_human.json"
 
 client = OpenAI(base_url="http://localhost:8000/v1", api_key="sk-local", timeout=600.0)
 agent = instructor.patch(client, mode=instructor.Mode.JSON)

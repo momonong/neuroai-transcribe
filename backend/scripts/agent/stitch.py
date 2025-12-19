@@ -6,8 +6,8 @@ import instructor
 from pydantic import BaseModel, Field
 
 # --- 設定 ---
-INPUT_FILE = "data/temp_chunks/chunk_3_1100278_1606067_aligned.json"
-OUTPUT_FILE = "data/temp_chunks/chunk_3_1100278_1606067_verified_dataset.json"
+INPUT_FILE = "data/temp_chunks/chunk_4_2203484_2918912_aligned.json"
+OUTPUT_FILE = "data/temp_chunks/chunk_4_2203484_2918912_verified_dataset.json"
 
 # --- 1. 定義 Agent 輸出結構 ---
 class VerifiedSentence(BaseModel):
