@@ -1,3 +1,4 @@
+import os
 import json
 import time
 from typing import Literal, List, Optional
@@ -12,7 +13,10 @@ load_dotenv()
 INPUT_FILE = "data/temp_chunks/chunk_1_0_747928_verified_dataset.json"
 OUTPUT_FILE = "data/temp_chunks/chunk_1_0_747928_flagged_for_human.json"
 
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="sk-local", timeout=600.0)
+base_url = os.getenv("LLM_API_URL", "http://localhost:8000/v1")
+api_key = os.getenv("OPENAI_API_KEY", "sk-local") 
+
+client = OpenAI(base_url=base_url, api_key=api_key, timeout=600.0)
 agent = instructor.patch(client, mode=instructor.Mode.JSON)
 
 # =========================================================

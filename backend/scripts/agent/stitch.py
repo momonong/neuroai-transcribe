@@ -1,9 +1,13 @@
+import os
 import json
 import difflib
 from typing import List
 from openai import OpenAI
 import instructor
 from pydantic import BaseModel, Field
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # --- 設定 ---
 INPUT_FILE = "data/temp_chunks/chunk_4_2203484_2918912_aligned.json"
@@ -28,7 +32,10 @@ def check_hallucination(original_text: str, rewritten_text: str) -> float:
     return difflib.SequenceMatcher(None, original_text, rewritten_text).ratio()
 
 # --- 3. 初始化 ---
-client = OpenAI(base_url="http://localhost:8000/v1", api_key="sk-local")
+base_url = os.getenv("LLM_API_URL", "http://localhost:8000/v1")
+api_key = os.getenv("OPENAI_API_KEY", "sk-local") 
+
+client = OpenAI(base_url=base_url, api_key=api_key)
 agent = instructor.patch(client, mode=instructor.Mode.JSON)
 
 def process_batch_safe(batch_segments):

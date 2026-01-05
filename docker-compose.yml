@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # =========================================
+  # 1. LLM Server (Gemma)
+  # =========================================
+  llm-server:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: gemma-server
+    ports:
+      # [安全修正] 只允許本機 (127.0.0.1) 訪問，外部 IP 連不進來
+      - "127.0.0.1:${HOST_LLM_PORT}:8000"
+    volumes:
+      - ${MODEL_CACHE_DIR}:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    # 這裡的 --host 0.0.0.0 是給 "Docker 內部網路" 用的，不用改
+    # 外部訪問權限由上面的 ports 控制
+    command: >
+      -m /models/gemma-3-12b-it-qat-q4_0-gguf/gemma-3-12b-it-q4_0.gguf
+      -c 8192
+      -ngl 99
+      --host 0.0.0.0
+      --port 8000
+
+  # =========================================
+  # 2. Backend (FastAPI)
+  # =========================================
+  backend:
+    build: ./backend
+    container_name: neuroai-backend
+    ports:
+      # [安全修正] 只允許本機訪問
+      - "127.0.0.1:${HOST_BACKEND_PORT}:8000"
+    depends_on:
+      - llm-server
+    volumes:
+      - ${MODEL_CACHE_DIR}:/models
+      - ./data:/app/data
+      - ./backend:/app
+    environment:
+      - LLM_API_URL=${LLM_API_INTERNAL_URL}
+      - TESTER_NAME=${TESTER_NAME}
+      - HF_TOKEN=${HF_TOKEN}
+      - MODEL_CACHE_DIR=/models
+      - WHISPER_MODEL_PATH=/models/whisper-large-v3
+      - LOCAL_DIARIZATION_CONFIG=/models/speaker-diarization-3.1/config.yaml
+    # Uvicorn 綁定 0.0.0.0 是為了讓 Frontend 容器或是主機能透過轉發連線到它
+    command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
+
+  # =========================================
+  # 3. Frontend (React/Vue/Next) - 新增
+  # =========================================
+  frontend:
+    build: ./frontend
+    container_name: neuroai-frontend
+    ports:
+      # [安全修正] 假設你的前端跑在 5173 (Vite 預設)，如果是 3000 請自行修改
+      - "127.0.0.1:5173:5173" 
+    volumes:
+      - ./frontend:/app
+      # [重要] 避免 host 的 node_modules 覆蓋容器內的
+      - /app/node_modules
+    environment:
+      # 這是給前端瀏覽器用的，瀏覽器是在你的電腦上跑，所以要連 localhost:8001
+      - VITE_API_URL=http://localhost:${HOST_BACKEND_PORT}
+      # 如果你是用 Next.js 或其他框架，變數名稱可能不同 (例如 NEXT_PUBLIC_API_URL)
+    # 確保後端起來了再起前端 (選用)
+    depends_on:
+      - backend
