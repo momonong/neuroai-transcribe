@@ -197,7 +197,7 @@ class PipelinePhase2:
 
 # --- 執行區塊 ---
 if __name__ == "__main__":
-    target_wav = "data/temp_chunks\chunk_4_2203484_2918912.wav" 
+    target_wav = "data/temp_chunks/chunk_4_1606067_2171157.wav" 
     
     base_name = os.path.splitext(target_wav)[0]
     json_whisper = f"{base_name}_whisper.json"
