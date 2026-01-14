@@ -19,9 +19,10 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], # 允許前端的網址
+    allow_credentials=True,
+    allow_methods=["*"], # 允許所有方法 (GET, POST...)
+    allow_headers=["*"], # 允許所有 Header
 )
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
