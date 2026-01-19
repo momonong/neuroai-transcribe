@@ -6,8 +6,9 @@ import {
   Grid, InputAdornment, IconButton, Autocomplete
 } from '@mui/material';
 import { 
-  VideoLibrary, PlayArrow, Timer, FolderOpen, Add // ★ 確認有引入 Add
+  VideoLibrary, Timer, FolderOpen, Add, PlayCircle, Pause
 } from '@mui/icons-material';
+import SkipNextIcon from '@mui/icons-material/SkipNext';
 import axios from 'axios';
 
 import { useTranscript } from './hooks/useTranscript';
@@ -43,11 +44,18 @@ function App() {
 
   // 手動跳轉時間 State
   const [jumpInput, setJumpInput] = useState("");
+  const [autoPlayAfterJump, setAutoPlayAfterJump] = useState(false);
 
   // 取得影片列表
   useMemo(() => {
      axios.get(`/api/videos`)
-       .then(res => setAvailableVideos(res.data))
+       .then(res => {
+         const uniqueVideos = Array.from(
+             new Map(res.data.map((item: any) => [item.path, item])).values()
+         ) as {path: string, name: string}[];
+
+         setAvailableVideos(uniqueVideos);
+       })
        .catch(err => {
          console.error('Failed to load videos:', err);
          setToast({ open: true, msg: '無法載入影片清單', type: 'error' });
@@ -77,31 +85,37 @@ function App() {
   }, [videoOffset, updateSegmentTime]);
 
   const handleManualJump = () => {
-      if (!videoRef.current || !jumpInput) return;
-      
-      let targetTime = 0;
-      // 支援 "MM:SS" (e.g., 1:30) 或 純秒數 (e.g., 90)
-      if (jumpInput.includes(':')) {
-          const parts = jumpInput.split(':');
-          if (parts.length === 2) {
-              const m = parseFloat(parts[0]);
-              const s = parseFloat(parts[1]);
-              targetTime = (m * 60) + s;
-          } else if (parts.length === 3) { // HH:MM:SS
-              const h = parseFloat(parts[0]);
-              const m = parseFloat(parts[1]);
-              const s = parseFloat(parts[2]);
-              targetTime = (h * 3600) + (m * 60) + s;
-          }
-      } else {
-          targetTime = parseFloat(jumpInput);
-      }
+    if (!videoRef.current || !jumpInput) return;
+    
+    let targetTime = 0;
+    // 解析時間格式邏輯 (保持不變)
+    if (jumpInput.includes(':')) {
+        const parts = jumpInput.split(':');
+        if (parts.length === 2) {
+            const m = parseFloat(parts[0]);
+            const s = parseFloat(parts[1]);
+            targetTime = (m * 60) + s;
+        } else if (parts.length === 3) {
+            const h = parseFloat(parts[0]);
+            const m = parseFloat(parts[1]);
+            const s = parseFloat(parts[2]);
+            targetTime = (h * 3600) + (m * 60) + s;
+        }
+    } else {
+        targetTime = parseFloat(jumpInput);
+    }
 
-      if (!isNaN(targetTime)) {
-          videoRef.current.currentTime = targetTime;
-          videoRef.current.play();
-      }
-  };
+    if (!isNaN(targetTime)) {
+        videoRef.current.currentTime = targetTime;
+        
+        // ★★★ 根據狀態決定行為 ★★★
+        if (autoPlayAfterJump) {
+            videoRef.current.play();
+        } else {
+            videoRef.current.pause();
+        }
+    }
+};
 
   const handleSaveWrapper = async () => {
       try {
@@ -181,43 +195,60 @@ function App() {
                   )}
               </Box>
 
-              {/* 控制面板 */}
-              <Box sx={{ p: 2, bgcolor: '#0f172a', borderBottom: '1px solid #334155' }}>
-                  <Grid container spacing={2} alignItems="center">
-                      {/* ★★★ 關鍵修正：使用 size 屬性 (MUI v6) ★★★ */}
-                      <Grid size={7}>
-                          <Select fullWidth size="small" value={mediaFileName} onChange={(e) => setMediaFileName(e.target.value)} sx={{ color: 'white', bgcolor: '#1e293b', '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }}>
-                              {availableVideos.length === 0 && <MenuItem disabled>找不到任何影片</MenuItem>}
-                              {availableVideos.map(v => <MenuItem key={v.path} value={v.path}>{v.name}</MenuItem>)}
-                          </Select>
-                      </Grid>
-                      <Grid size={5}>
-                          <TextField 
-                              fullWidth 
-                              size="small" 
-                              placeholder="跳轉 (如 1:20)" 
-                              value={jumpInput}
-                              onChange={(e) => setJumpInput(e.target.value)}
-                              onKeyDown={(e) => e.key === 'Enter' && handleManualJump()}
-                              sx={{ bgcolor: '#1e293b', input: { color: 'white' }, fieldset: { borderColor: '#475569' } }}
-                              InputProps={{
-                                  endAdornment: (
-                                      <InputAdornment position="end">
-                                          <IconButton size="small" onClick={handleManualJump} sx={{ color: '#38bdf8' }}>
-                                              <PlayArrow />
-                                          </IconButton>
-                                      </InputAdornment>
-                                  ),
-                                  startAdornment: (
-                                      <InputAdornment position="start">
-                                          <Timer sx={{ color: '#64748b', fontSize: 18 }} />
-                                      </InputAdornment>
-                                  )
-                              }}
-                          />
-                      </Grid>
-                  </Grid>
-              </Box>
+            {/* 控制面板 */}
+            <Box sx={{ p: 2, bgcolor: '#0f172a', borderBottom: '1px solid #334155' }}>
+                <Grid container spacing={1} alignItems="center">
+                    {/* 影片選單 (佔 6 格) */}
+                    <Grid size={6}>
+                        <Select fullWidth size="small" value={mediaFileName} onChange={(e) => setMediaFileName(e.target.value)} sx={{ color: 'white', bgcolor: '#1e293b', '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }}>
+                            {availableVideos.length === 0 && <MenuItem disabled>找不到任何影片</MenuItem>}
+                            {availableVideos.map(v => <MenuItem key={v.path} value={v.path}>{v.name}</MenuItem>)}
+                        </Select>
+                    </Grid>
+
+                    {/* 自動播放開關 (佔 1 格) */}
+                    <Grid size={1} display="flex" justifyContent="center">
+                        <IconButton 
+                            size="small"
+                            onClick={() => setAutoPlayAfterJump(!autoPlayAfterJump)}
+                            title={autoPlayAfterJump ? "跳轉後自動播放" : "跳轉後暫停"}
+                            sx={{ 
+                                color: autoPlayAfterJump ? '#38bdf8' : '#64748b',
+                                bgcolor: autoPlayAfterJump ? 'rgba(56, 189, 248, 0.1)' : 'transparent'
+                            }}
+                        >
+                            {autoPlayAfterJump ? <PlayCircle fontSize="small" /> : <Pause fontSize="small" />}
+                        </IconButton>
+                    </Grid>
+
+                    {/* 時間跳轉輸入框 (佔 5 格) */}
+                    <Grid size={5}>
+                        <TextField 
+                            fullWidth 
+                            size="small" 
+                            placeholder="跳轉 (1:20)" 
+                            value={jumpInput}
+                            onChange={(e) => setJumpInput(e.target.value)}
+                            onKeyDown={(e) => e.key === 'Enter' && handleManualJump()}
+                            sx={{ bgcolor: '#1e293b', input: { color: 'white' }, fieldset: { borderColor: '#475569' } }}
+                            InputProps={{
+                                endAdornment: (
+                                    <InputAdornment position="end">
+                                        <IconButton size="small" onClick={handleManualJump} sx={{ color: '#38bdf8' }}>
+                                            <SkipNextIcon />
+                                        </IconButton>
+                                    </InputAdornment>
+                                ),
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <Timer sx={{ color: '#64748b', fontSize: 18 }} />
+                                    </InputAdornment>
+                                )
+                            }}
+                        />
+                    </Grid>
+                </Grid>
+            </Box>
 
               {/* 檔案列表 */}
               <Box sx={{ flex: 1, overflowY: 'auto', p: 2, bgcolor: '#0f172a' }}>
