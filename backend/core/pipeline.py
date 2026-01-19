@@ -6,9 +6,12 @@ import warnings
 import gc
 from dotenv import load_dotenv
 
+# 引入配置
+from core.config import config
+
 # --- 1. 設定環境 ---
 load_dotenv()
-MODEL_ROOT = os.getenv("MODEL_CACHE_DIR")
+MODEL_ROOT = config.model_cache_dir
 os.environ["HF_HOME"] = MODEL_ROOT
 os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
 
@@ -51,16 +54,17 @@ def permissive_load(*args, **kwargs):
     return original_load(*args, **kwargs)
 torch.load = permissive_load
 
+from typing import Optional
 # --- 3. 匯入重型套件 ---
 from faster_whisper import WhisperModel
 from pyannote.audio import Pipeline
 
 class PipelinePhase2:
-    def __init__(self, device="cuda"):
-        self.device = device
-        self.compute_type = "float16" if torch.cuda.is_available() else "int8"
+    def __init__(self, device: Optional[str] = None):
+        self.device = device or config.device
+        self.compute_type = config.compute_type if torch.cuda.is_available() else "int8"
         
-        if not os.getenv("HF_TOKEN"):
+        if not config.hf_token:
             print("⚠️ 警告: 未偵測到 HF_TOKEN，Pyannote 可能會報錯。")
 
     # --- Step 1: Whisper ---
@@ -71,7 +75,7 @@ class PipelinePhase2:
 
         print(f"🎧 [Step 1] Running Whisper on {os.path.basename(audio_path)}...")
         model = WhisperModel(
-            "large-v3", 
+            config.whisper_model, 
             device=self.device, 
             compute_type=self.compute_type,
             download_root=MODEL_ROOT 
@@ -79,10 +83,10 @@ class PipelinePhase2:
 
         segments, info = model.transcribe(
             audio_path,
-            beam_size=5,
+            beam_size=config.whisper_beam_size,
             word_timestamps=True,
             vad_filter=True,
-            language="zh"
+            language=config.whisper_language
         )
         
         results = []
@@ -113,7 +117,7 @@ class PipelinePhase2:
 
         print(f"🗣️ [Step 2] Running Pyannote on {os.path.basename(audio_path)}...")
         
-        hf_token = os.getenv("HF_TOKEN")
+        hf_token = config.hf_token
         try:
             pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",

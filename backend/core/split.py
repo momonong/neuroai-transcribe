@@ -1,5 +1,6 @@
 import os
 import math
+from typing import Optional
 from pydub import AudioSegment
 from pydub.silence import detect_silence
 from dotenv import load_dotenv
@@ -8,10 +9,21 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class SmartAudioSplitter:
-    def __init__(self, output_dir="data/temp_chunks"):
-        self.output_dir = output_dir
-        if not os.path.exists(output_dir):
-            os.makedirs(output_dir)
+    def __init__(self, output_dir: Optional[str] = None):
+        """
+        初始化音訊切分器
+        
+        Args:
+            output_dir: 輸出目錄，如果不提供則使用檔案管理器的預設路徑
+        """
+        if output_dir is None:
+            from core.file_manager import file_manager
+            self.output_dir = str(file_manager.temp_chunks_dir)
+        else:
+            self.output_dir = output_dir
+            
+        if not os.path.exists(self.output_dir):
+            os.makedirs(self.output_dir)
 
     def _get_safe_filename(self, file_path):
         """用於 Log 顯示，隱藏敏感資訊"""

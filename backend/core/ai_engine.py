@@ -2,15 +2,16 @@ import os
 import glob
 import json
 import shutil
-from typing import List
+from typing import List, Optional
 
-# 引入你的四個模組
+# 引入檔案管理器和其他模組
+from core.file_manager import file_manager
 from core.split import SmartAudioSplitter
 from core.pipeline import PipelinePhase2
 from core.stitch import run_stitching_logic
 from core.flag import run_anomaly_detector
 
-def run_neuroai_pipeline(video_path: str, project_dir: str):
+def run_neuroai_pipeline(video_path: str, project_name: Optional[str] = None):
     """
     執行完整的 NeuroAI 轉錄流程：
     1. Split (切分)
@@ -18,18 +19,22 @@ def run_neuroai_pipeline(video_path: str, project_dir: str):
     3. Stitch (合併句子)
     4. Flag (異常標記)
     """
-    print(f"🚀 [AI Engine] 啟動流程: {os.path.basename(video_path)}")
-    print(f"📂 [AI Engine] 專案路徑: {project_dir}")
+    # 建立或取得專案
+    if project_name is None:
+        project_name = file_manager.create_project(video_path)
     
-    # 定義暫存資料夾
-    chunks_dir = os.path.join(project_dir, "temp_chunks")
-    os.makedirs(chunks_dir, exist_ok=True)
+    project_dir = file_manager.get_project_dir(project_name)
+    chunks_dir = file_manager.get_temp_chunks_dir(project_name)
+    
+    print(f"🚀 [AI Engine] 啟動流程: {os.path.basename(video_path)}")
+    print(f"📂 [AI Engine] 專案: {project_name}")
+    print(f"📁 [AI Engine] 專案路徑: {project_dir}")
 
     # ==========================================
     # Phase 1: 切分音訊 (Splitting)
     # ==========================================
     print("\n✂️ --- Phase 1: Audio Splitting ---")
-    splitter = SmartAudioSplitter(output_dir=chunks_dir)
+    splitter = SmartAudioSplitter(output_dir=str(chunks_dir))
     # split_audio 會回傳 metadata list
     chunk_metadata_list = splitter.split_audio(video_path, num_chunks=4)
     
@@ -85,11 +90,10 @@ def run_neuroai_pipeline(video_path: str, project_dir: str):
     torch.cuda.empty_cache()
 
     # 儲存未修飾的原始轉錄檔 (備份用)
-    raw_path = os.path.join(project_dir, "raw_aligned_transcript.json")
+    raw_path = file_manager.get_output_file_path(project_name, "raw_aligned_transcript.json")
     # 依時間排序
     all_aligned_segments.sort(key=lambda x: x['start'])
-    with open(raw_path, 'w', encoding='utf-8') as f:
-        json.dump(all_aligned_segments, f, ensure_ascii=False, indent=2)
+    file_manager.save_json(all_aligned_segments, raw_path, backup=False)
 
     # ==========================================
     # Phase 3: 句子修復 (Stitching)
@@ -108,13 +112,12 @@ def run_neuroai_pipeline(video_path: str, project_dir: str):
     # ==========================================
     # Final: 輸出最終結果
     # ==========================================
-    final_output_path = os.path.join(project_dir, "transcript.json")
-    with open(final_output_path, 'w', encoding='utf-8') as f:
-        json.dump(final_data, f, ensure_ascii=False, indent=2)
+    final_output_path = file_manager.get_output_file_path(project_name, "transcript.json")
+    file_manager.save_json(final_data, final_output_path, backup=True)
 
     print(f"\n✅✅✅ Pipeline Complete! Result saved to: {final_output_path}")
     
     # 清理暫存檔 (可選)
     # shutil.rmtree(chunks_dir) 
     
-    return final_output_path
+    return str(final_output_path)

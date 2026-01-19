@@ -1,9 +1,7 @@
-// Path: frontend/src/components/TranscriptItem.tsx
-
 import React from 'react';
 import { Box, TextField, Chip, Tooltip, IconButton, Alert } from '@mui/material';
 import { PlayCircleFilled, AccessTime, WarningAmber } from '@mui/icons-material';
-import type { TranscriptSegment } from '../types'; 
+import type { TranscriptSegment } from '../types'; // 使用 import type
 
 interface Props {
   segment: TranscriptSegment;
@@ -25,7 +23,7 @@ const formatTime = (seconds: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
 };
 
-// ★★★ 關鍵優化：使用 React.memo 防止打字卡頓 ★★★
+// ★★★ 關鍵優化：使用 React.memo ★★★
 export const TranscriptItem = React.memo(({ 
   segment, videoOffset, displaySpeaker, isDoctor, 
   onTextChange, onSyncTime, onJumpToTime, onSpeakerClick, index 
@@ -33,7 +31,7 @@ export const TranscriptItem = React.memo(({
 
   const absoluteDisplayTime = videoOffset + segment.start;
 
-  // 使用本地 handleChange 避免直接在 render 中創建箭頭函式
+  // 使用本地 handleChange
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onTextChange(segment.sentence_id, e.target.value);
   };
@@ -101,7 +99,6 @@ export const TranscriptItem = React.memo(({
     </Box>
   );
 }, (prevProps, nextProps) => {
-  // 只有當這些屬性改變時，才重新渲染
   return (
     prevProps.segment === nextProps.segment &&
     prevProps.videoOffset === nextProps.videoOffset &&

@@ -1,36 +1,44 @@
-// Path: frontend/src/App.tsx
-
 import { useState, useRef, useMemo, useCallback } from 'react';
-import { Box, Drawer, List, ListItem, ListItemIcon, ListItemText, ListItemButton, Paper, Button, Select, MenuItem, Snackbar, Alert, Typography, Divider, Menu, Dialog, DialogTitle, DialogContent, TextField, DialogActions } from '@mui/material';
+import { 
+  Box, Drawer, List, ListItem, ListItemIcon, ListItemText, ListItemButton, 
+  Paper, Button, Select, MenuItem, Snackbar, Alert, Typography, Divider, 
+  Menu, Dialog, DialogTitle, DialogContent, TextField, DialogActions 
+} from '@mui/material';
 import { VideoLibrary, Save, Dashboard, Add } from '@mui/icons-material';
 import axios from 'axios';
 
-// 引入我們剛拆分出去的檔案
 import { useTranscript } from './hooks/useTranscript';
 import { TranscriptItem } from './components/TranscriptItem';
 
-const STATIC_BASE = `http://localhost:8001/static`;
+// ★ 改成相對路徑，讓 Vite Proxy 處理
+const STATIC_BASE = `/static`;
 
 function App() {
   const { 
     chunks, selectedChunk, setSelectedChunk,
     segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
-    hasUnsavedChanges, updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save 
+    hasUnsavedChanges, loading, error,
+    updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save 
   } = useTranscript();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [availableVideos, setAvailableVideos] = useState<{path:string, name:string}[]>([]);
   const [toast, setToast] = useState({ open: false, msg: '', type: 'info' as any });
 
-  // Menu State (這些 UI 狀態可以留在 App，因為不影響大範圍效能)
+  // Menu State
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
   const [isNewSpeakerDialogOpen, setIsNewSpeakerDialogOpen] = useState(false);
   const [newSpeakerName, setNewSpeakerName] = useState("");
 
-  // 取得影片列表
+  // 取得影片列表 (使用相對路徑)
   useMemo(() => {
-     axios.get(`http://localhost:8001/api/videos`).then(res => setAvailableVideos(res.data));
+     axios.get(`/api/videos`)
+       .then(res => setAvailableVideos(res.data))
+       .catch(err => {
+         console.error('Failed to load videos:', err);
+         setToast({ open: true, msg: '無法載入影片清單', type: 'error' });
+       });
   }, []);
 
   const allSpeakers = useMemo(() => {
@@ -89,7 +97,13 @@ function App() {
          <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1, color: '#38bdf8' }}>
             <Dashboard /><Typography variant="subtitle1" fontWeight="bold">NeuroAI Editor</Typography>
          </Box>
+         
          <List sx={{ px: 1, overflowY: 'auto', flex: 1 }}>
+            {chunks.length === 0 && (
+                <Box sx={{ p: 2, textAlign: 'center', opacity: 0.5 }}>
+                    <Typography variant="caption">沒有資料 (No Chunks)</Typography>
+                </Box>
+            )}
             {chunks.map(f => (
                 <ListItem key={f} disablePadding sx={{ mb: 0.5 }}>
                   <ListItemButton 
@@ -98,7 +112,6 @@ function App() {
                       sx={{ 
                           borderRadius: 1, 
                           '&.Mui-selected': { bgcolor: '#2563eb', color: 'white' },
-                          // 修正 hover 時的顏色，讓體驗更好
                           '&.Mui-selected:hover': { bgcolor: '#1d4ed8' }
                       }}
                   >
@@ -116,6 +129,13 @@ function App() {
       </Drawer>
 
       <Box component="main" sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+        
+        {/* 全域錯誤提示 */}
+        {error && (
+          <Alert severity="error" sx={{ m: 2, mb: 0 }}>
+            {error}
+          </Alert>
+        )}
         
         {/* TopBar */}
         <Paper square elevation={0} sx={{ height: 64, px: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: '#1e293b', borderBottom: '1px solid #334155' }}>
@@ -136,8 +156,14 @@ function App() {
                 ))}
             </Box>
 
-            <Button variant="contained" color={hasUnsavedChanges ? "warning" : "primary"} startIcon={<Save/>} disabled={!hasUnsavedChanges} onClick={handleSaveWrapper}>
-                Save Changes
+            <Button 
+              variant="contained" 
+              color={hasUnsavedChanges ? "warning" : "primary"} 
+              startIcon={<Save/>} 
+              disabled={!hasUnsavedChanges || loading} 
+              onClick={handleSaveWrapper}
+            >
+                {loading ? 'Saving...' : 'Save Changes'}
             </Button>
         </Paper>
 
@@ -160,6 +186,12 @@ function App() {
 
             {/* 右側：逐字稿列表 */}
             <Box sx={{ width: '55%', bgcolor: '#f8fafc', overflowY: 'auto', p: 3, pb: 10 }}>
+                {segments.length === 0 && !loading && (
+                    <Box sx={{ textAlign: 'center', mt: 10, color: '#94a3b8' }}>
+                        <Typography>請從左側選擇一個檔案開始編輯</Typography>
+                    </Box>
+                )}
+                
                 {segments.map((seg, index) => (
                     <TranscriptItem 
                         key={seg.sentence_id} 

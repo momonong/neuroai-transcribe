@@ -1,10 +1,9 @@
-// Path: frontend/src/hooks/useTranscript.ts
-
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import type { ChunkData, TranscriptSegment } from '../types';
 
-const API_BASE = `http://localhost:8001/api`;
+// ★ 改成相對路徑，讓 Vite Proxy 處理
+const API_BASE = `/api`;
 
 export const useTranscript = () => {
   const [chunks, setChunks] = useState<string[]>([]);
@@ -14,22 +13,30 @@ export const useTranscript = () => {
   const [videoOffset, setVideoOffset] = useState<number>(0);
   const [mediaFileName, setMediaFileName] = useState<string>('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
 
   // 初始化載入 chunk 列表
   useEffect(() => {
-    axios.get(`${API_BASE}/temp/chunks`).then(res => {
-      if (res.data.files) {
-        setChunks(res.data.files);
-        if (res.data.files.length > 0) setSelectedChunk(res.data.files[0]);
-      }
-    });
+    axios.get(`${API_BASE}/temp/chunks`)
+      .then(res => {
+        if (res.data.files) {
+          setChunks(res.data.files);
+          if (res.data.files.length > 0) setSelectedChunk(res.data.files[0]);
+        }
+      })
+      .catch(err => {
+        console.error("Failed to load chunks:", err);
+        setError("無法載入檔案列表，請確認後端是否已啟動 (Port 8001)");
+      });
   }, []);
 
   // 當選擇的 Chunk 改變時，載入詳細資料
   useEffect(() => {
     if (!selectedChunk) return;
     setLoading(true);
+    setError(null);
+    
     axios.get<ChunkData>(`${API_BASE}/temp/chunk/${selectedChunk}`)
       .then(res => {
         const data = res.data;
@@ -44,6 +51,10 @@ export const useTranscript = () => {
            setSpeakerMap(data.speaker_mapping || {});
         }
         setHasUnsavedChanges(false);
+      })
+      .catch(err => {
+        console.error(err);
+        setError("讀取逐字稿資料失敗");
       })
       .finally(() => setLoading(false));
   }, [selectedChunk]);
@@ -94,7 +105,7 @@ export const useTranscript = () => {
   return {
     chunks, selectedChunk, setSelectedChunk,
     segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
-    loading, hasUnsavedChanges,
+    loading, error, hasUnsavedChanges,
     updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save
   };
 };
