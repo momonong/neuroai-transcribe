@@ -11,6 +11,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+# 引入檔案管理器
+from core.file_manager import file_manager
+
 app = FastAPI()
 
 # ==========================================
@@ -19,23 +22,18 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"], # 允許前端的網址
+    allow_credentials=True,
+    allow_methods=["*"], # 允許所有方法 (GET, POST...)
+    allow_headers=["*"], # 允許所有 Header
 )
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_DIR = os.path.join(BASE_DIR, "data")          # 指向 backend/data
-ASD_DIR = os.path.join(DATA_DIR, "ASD")            # 指向 backend/data/ASD
-TEMP_CHUNKS_DIR = os.path.join(DATA_DIR, "temp_chunks")
+# 使用檔案管理器的路徑
+DATA_DIR = str(file_manager.data_dir)
+ASD_DIR = str(file_manager.asd_dir)
+TEMP_CHUNKS_DIR = str(file_manager.temp_chunks_dir)
 
-# 確保資料夾存在
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(ASD_DIR, exist_ok=True)
-os.makedirs(TEMP_CHUNKS_DIR, exist_ok=True)
-
-# ★★★ 修改 1: 掛載整個 data 資料夾 ★★★
-# 這樣前端可以存取 /static/temp_chunks/xxx 也可以存取 /static/ASD/xxx
+# 掛載靜態檔案
 app.mount("/static", StaticFiles(directory=DATA_DIR), name="static")
 
 print(f"🚀 Server started.")
@@ -72,30 +70,18 @@ class SaveRequest(BaseModel):
 
 def find_video_file(base_filename: str):
     """
-    暴力版：完全忽略 JSON 檔名，直接回傳 ASD 資料夾內的第一個 MP4。
+    使用檔案管理器智慧搜尋影片檔案
     """
-    print(f"🔍 [Video Search] Looking for ANY MP4 in {ASD_DIR}...")
+    print(f"🔍 [Video Search] Looking for video matching: {base_filename}")
     
-    # 搜尋 ASD 資料夾下所有的 MP4 (包含子目錄)
-    video_candidates = glob.glob(os.path.join(ASD_DIR, "**", "*.[mM][pP]4"), recursive=True)
+    # 使用檔案管理器的智慧匹配功能
+    video_path = file_manager.find_best_video_match(base_filename)
     
-    if video_candidates:
-        # 直接拿第一個找到的影片
-        found_video = video_candidates[0]
-        
-        # 計算相對於 data 資料夾的路徑
-        # 例如: found_video = .../backend/data/ASD/2025.../video.mp4
-        # DATA_DIR = .../backend/data
-        # relative_path = ASD/2025.../video.mp4
-        relative_path = os.path.relpath(found_video, DATA_DIR)
-        
-        # ★★★ 關鍵：Windows 反斜線 (\) 必須換成 URL 正斜線 (/) ★★★
-        relative_path = relative_path.replace("\\", "/")
-        
-        print(f"✅ [Video Found] Path: {relative_path}")
-        return relative_path
-
-    print("❌ [Video Search] No MP4 found in ASD directory.")
+    if video_path:
+        print(f"✅ [Video Found] Path: {video_path}")
+        return video_path
+    
+    print("❌ [Video Search] No matching video found.")
     return None
 
 # ==========================================
@@ -105,32 +91,20 @@ def find_video_file(base_filename: str):
 @app.get("/api/temp/chunks")
 def get_temp_chunks():
     """取得所有待校對 Chunk (不包含已修正的 _corrected)"""
-    if not os.path.exists(TEMP_CHUNKS_DIR):
-        return {"files": []}
-    
-    # 只列出 _flagged_for_human.json，過濾掉 _corrected.json 以免列表重複
-    files = [f for f in os.listdir(TEMP_CHUNKS_DIR) 
-             if f.endswith("_flagged_for_human.json") and "_corrected" not in f]
-    
-    try:
-        files.sort(key=lambda x: int(x.split('_')[1])) 
-    except:
-        files.sort()
+    files = file_manager.get_chunk_json_files(file_type="flagged")
     return {"files": files}
 
 @app.get("/api/temp/chunk/{filename}")
 def get_chunk_data(filename: str):
-    file_path = os.path.join(TEMP_CHUNKS_DIR, filename)
+    file_path = file_manager.temp_chunks_dir / filename
     
-    # 優先讀取 "_corrected" 版本 (如果有的話，讓使用者繼續編輯修正版)
-    # 但為了比較模型效果，你可能想看原始版。
-    # 這裡邏輯維持：讀取你點選的那個檔案。
-    if not os.path.exists(file_path):
+    if not file_path.exists():
         raise HTTPException(status_code=404, detail="JSON not found")
     
     try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        data = file_manager.load_json(file_path)
+        if data is None:
+            raise HTTPException(status_code=500, detail="Failed to load JSON")
 
         # 1. 計算 Offset (時間偏移)
         parts = filename.split('_')
@@ -159,10 +133,7 @@ def get_chunk_data(filename: str):
 @app.post("/api/temp/save")
 def save_chunk_data(req: SaveRequest):
     """
-    ★★★ 修改 2: 另存新檔邏輯 ★★★
-    原始: chunk_1_0_xxx_flagged_for_human.json
-    存檔: chunk_1_0_xxx_corrected.json
-    這樣原始檔案不會被動到。
+    使用檔案管理器儲存修正後的資料
     """
     
     # 產生新檔名
@@ -176,7 +147,7 @@ def save_chunk_data(req: SaveRequest):
         else:
             new_filename = original_name # 已經是修正版，就覆蓋修正版
 
-    save_path = os.path.join(TEMP_CHUNKS_DIR, new_filename)
+    save_path = file_manager.temp_chunks_dir / new_filename
     
     save_content = {
         "original_source": original_name,
@@ -185,49 +156,50 @@ def save_chunk_data(req: SaveRequest):
         "segments": req.segments
     }
     
-    try:
-        with open(save_path, "w", encoding="utf-8") as f:
-            json.dump(save_content, f, ensure_ascii=False, indent=2)
-        
+    success = file_manager.save_json(save_content, save_path, backup=False)
+    
+    if success:
         print(f"💾 Saved to new file: {new_filename}")
         return {
             "status": "success", 
             "message": f"已另存為新檔案: {new_filename}",
             "new_filename": new_filename
         }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Save failed: {str(e)}")
+    else:
+        raise HTTPException(status_code=500, detail="Save failed")
 
 @app.get("/api/videos")
 def get_all_videos():
     """
-    列出 ASD 資料夾下所有的 MP4 檔案，供前端選擇
+    使用檔案管理器列出所有影片檔案
     """
-    video_list = []
-    print(f"🔍 Scanning for videos in {ASD_DIR}...")
-    
-    # 遞迴搜尋所有 .mp4 / .mov
-    candidates = glob.glob(os.path.join(ASD_DIR, "**", "*.[mM][pP]4"), recursive=True)
-    candidates += glob.glob(os.path.join(ASD_DIR, "**", "*.[mM][oO][vV]"), recursive=True)
-    
-    for full_path in candidates:
-        # 轉成相對路徑 (相對於 backend/data)
-        # 例如: ASD/20250421-xxx/video.mp4
-        try:
-            rel_path = os.path.relpath(full_path, DATA_DIR)
-            rel_path = rel_path.replace("\\", "/") # Windows 修正
-            
-            # 取得顯示名稱 (只有檔名，不含路徑，方便閱讀)
-            display_name = os.path.basename(full_path)
-            
-            video_list.append({
-                "path": rel_path,
-                "name": display_name
-            })
-        except Exception as e:
-            print(f"Error parsing path {full_path}: {e}")
-            
+    video_list = file_manager.find_video_files()
     return video_list
+
+@app.get("/api/projects")
+def get_projects():
+    """取得所有專案清單"""
+    projects = file_manager.get_project_list()
+    return {"projects": projects}
+
+@app.post("/api/projects/create")
+def create_project(video_path: str, project_name: Optional[str] = None):
+    """建立新專案"""
+    try:
+        # 檢查影片檔案是否存在
+        full_video_path = file_manager.data_dir / video_path
+        if not full_video_path.exists():
+            raise HTTPException(status_code=404, detail="Video file not found")
+        
+        project_name = file_manager.create_project(str(full_video_path), project_name)
+        
+        return {
+            "status": "success",
+            "project_name": project_name,
+            "message": f"專案 {project_name} 建立成功"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
     import uvicorn
