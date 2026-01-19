@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, TextField, Chip, Tooltip, IconButton, Alert } from '@mui/material';
-import { PlayCircleFilled, AccessTime, WarningAmber } from '@mui/icons-material';
-import type { TranscriptSegment } from '../types'; // 使用 import type
+import { PlayCircleFilled, AccessTime, WarningAmber, AddCircle, Delete } from '@mui/icons-material';
+import type { TranscriptSegment } from '../types';
 
 interface Props {
   segment: TranscriptSegment;
@@ -12,6 +12,8 @@ interface Props {
   onSyncTime: (index: number) => void;
   onJumpToTime: (start: number) => void;
   onSpeakerClick: (e: React.MouseEvent<HTMLElement>, index: number) => void;
+  onDelete: (index: number) => void;   // ★ 新增定義
+  onAddAfter: (index: number) => void; // ★ 新增定義
   index: number;
 }
 
@@ -23,22 +25,21 @@ const formatTime = (seconds: number) => {
   return `${mins}:${secs.toString().padStart(2, '0')}.${ms}`;
 };
 
-// ★★★ 關鍵優化：使用 React.memo ★★★
 export const TranscriptItem = React.memo(({ 
   segment, videoOffset, displaySpeaker, isDoctor, 
-  onTextChange, onSyncTime, onJumpToTime, onSpeakerClick, index 
+  onTextChange, onSyncTime, onJumpToTime, onSpeakerClick, onDelete, onAddAfter, index 
 }: Props) => {
 
   const absoluteDisplayTime = videoOffset + segment.start;
 
-  // 使用本地 handleChange
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     onTextChange(segment.sentence_id, e.target.value);
   };
 
   return (
-    <Box sx={{ display: 'flex', gap: 2, mb: 3 }}>
-      {/* 時間控制區 */}
+    <Box sx={{ display: 'flex', gap: 2, mb: 3, position: 'relative', '&:hover .actions': { opacity: 1 } }}>
+      
+      {/* 左側：時間 */}
       <Box sx={{ pt: 0.5, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 0.5 }}>
         <Tooltip title="跳轉到此處">
           <Chip
@@ -64,7 +65,7 @@ export const TranscriptItem = React.memo(({
         </Tooltip>
       </Box>
 
-      {/* 內容編輯區 */}
+      {/* 中間：內容 */}
       <Box sx={{ flex: 1 }}>
         <Tooltip title="點擊切換語者">
           <Chip
@@ -95,6 +96,20 @@ export const TranscriptItem = React.memo(({
             {segment.review_reason}
           </Alert>
         )}
+      </Box>
+
+      {/* 右側：操作按鈕 */}
+      <Box className="actions" sx={{ opacity: 0, transition: '0.2s', display: 'flex', flexDirection: 'column', gap: 1, pt: 1 }}>
+          <Tooltip title="在此句下方新增">
+              <IconButton size="small" color="primary" onClick={() => onAddAfter(index)}>
+                  <AddCircle />
+              </IconButton>
+          </Tooltip>
+          <Tooltip title="刪除此句">
+              <IconButton size="small" color="error" onClick={() => onDelete(index)}>
+                  <Delete />
+              </IconButton>
+          </Tooltip>
       </Box>
     </Box>
   );

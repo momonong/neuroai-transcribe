@@ -1,16 +1,19 @@
 import { useState, useRef, useMemo, useCallback } from 'react';
 import { 
-  Box, Drawer, List, ListItem, ListItemIcon, ListItemText, ListItemButton, 
+  Box, List, ListItemButton, ListItemIcon, ListItemText, 
   Paper, Button, Select, MenuItem, Snackbar, Alert, Typography, Divider, 
-  Menu, Dialog, DialogTitle, DialogContent, TextField, DialogActions 
+  Menu, Dialog, DialogTitle, DialogContent, TextField, DialogActions,
+  Grid, InputAdornment, IconButton, Autocomplete
 } from '@mui/material';
-import { VideoLibrary, Save, Dashboard, Add } from '@mui/icons-material';
+import { 
+  VideoLibrary, PlayArrow, Timer, FolderOpen, Add // ★ 確認有引入 Add
+} from '@mui/icons-material';
 import axios from 'axios';
 
 import { useTranscript } from './hooks/useTranscript';
 import { TranscriptItem } from './components/TranscriptItem';
+import { TopBar } from './components/TopBar';
 
-// ★ 改成相對路徑，讓 Vite Proxy 處理
 const STATIC_BASE = `/static`;
 
 function App() {
@@ -18,20 +21,30 @@ function App() {
     chunks, selectedChunk, setSelectedChunk,
     segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
     hasUnsavedChanges, loading, error,
-    updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save 
+    updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
+    deleteSegment, addSegment, uploadVideo, existingTesters, fetchTesters
   } = useTranscript();
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const [availableVideos, setAvailableVideos] = useState<{path:string, name:string}[]>([]);
   const [toast, setToast] = useState({ open: false, msg: '', type: 'info' as any });
 
-  // Menu State
+  // UI State
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
   const [activeSegmentIndex, setActiveSegmentIndex] = useState<number | null>(null);
+  
+  // 上傳 Dialog State
+  const [isUploadOpen, setIsUploadOpen] = useState(false);
   const [isNewSpeakerDialogOpen, setIsNewSpeakerDialogOpen] = useState(false);
   const [newSpeakerName, setNewSpeakerName] = useState("");
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [testerName, setTesterName] = useState("");
+  const [isUploading, setIsUploading] = useState(false);
 
-  // 取得影片列表 (使用相對路徑)
+  // 手動跳轉時間 State
+  const [jumpInput, setJumpInput] = useState("");
+
+  // 取得影片列表
   useMemo(() => {
      axios.get(`/api/videos`)
        .then(res => setAvailableVideos(res.data))
@@ -47,7 +60,8 @@ function App() {
     return Array.from(rawSpeakers).sort();
   }, [segments, speakerMap]);
 
-  // --- Callbacks ---
+  // --- Functions ---
+
   const handleJumpToTime = useCallback((relativeStart: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = videoOffset + relativeStart;
@@ -62,6 +76,33 @@ function App() {
     updateSegmentTime(index, newRelative);
   }, [videoOffset, updateSegmentTime]);
 
+  const handleManualJump = () => {
+      if (!videoRef.current || !jumpInput) return;
+      
+      let targetTime = 0;
+      // 支援 "MM:SS" (e.g., 1:30) 或 純秒數 (e.g., 90)
+      if (jumpInput.includes(':')) {
+          const parts = jumpInput.split(':');
+          if (parts.length === 2) {
+              const m = parseFloat(parts[0]);
+              const s = parseFloat(parts[1]);
+              targetTime = (m * 60) + s;
+          } else if (parts.length === 3) { // HH:MM:SS
+              const h = parseFloat(parts[0]);
+              const m = parseFloat(parts[1]);
+              const s = parseFloat(parts[2]);
+              targetTime = (h * 3600) + (m * 60) + s;
+          }
+      } else {
+          targetTime = parseFloat(jumpInput);
+      }
+
+      if (!isNaN(targetTime)) {
+          videoRef.current.currentTime = targetTime;
+          videoRef.current.play();
+      }
+  };
+
   const handleSaveWrapper = async () => {
       try {
           await save();
@@ -71,7 +112,7 @@ function App() {
       }
   };
 
-  // --- Menu Handlers ---
+  // ★ 這裡確保 event 被使用 (setAnchorEl)
   const handleSpeakerClick = useCallback((event: React.MouseEvent<HTMLElement>, index: number) => {
     setAnchorEl(event.currentTarget);
     setActiveSegmentIndex(index);
@@ -89,141 +130,203 @@ function App() {
     setIsNewSpeakerDialogOpen(false);
   };
 
+  const handleUploadConfirm = async () => {
+      if(!uploadFile || !testerName) return;
+      setIsUploading(true);
+      try {
+          await uploadVideo(uploadFile, testerName);
+          setToast({ open: true, msg: '上傳成功！', type: 'success' });
+          setIsUploadOpen(false);
+          fetchTesters();
+      } catch(e) {
+          setToast({ open: true, msg: '上傳失敗', type: 'error' });
+      } finally {
+          setIsUploading(false);
+      }
+  };
+
   return (
-    <Box sx={{ display: 'flex', height: '100vh', bgcolor: '#0f172a', color: '#e2e8f0', fontFamily: 'Inter, sans-serif' }}>
+    <Box sx={{ display: 'flex', flexDirection: 'column', height: '100vh', bgcolor: '#0f172a', color: '#e2e8f0' }}>
       
-      {/* 側邊欄 */}
-      <Drawer variant="permanent" sx={{ width: 260, flexShrink: 0, '& .MuiPaper-root': { width: 260, bgcolor: '#1e293b', color: '#94a3b8', borderRight: '1px solid #334155' } }}>
-         <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1, color: '#38bdf8' }}>
-            <Dashboard /><Typography variant="subtitle1" fontWeight="bold">NeuroAI Editor</Typography>
-         </Box>
-         
-         <List sx={{ px: 1, overflowY: 'auto', flex: 1 }}>
-            {chunks.length === 0 && (
-                <Box sx={{ p: 2, textAlign: 'center', opacity: 0.5 }}>
-                    <Typography variant="caption">沒有資料 (No Chunks)</Typography>
-                </Box>
-            )}
-            {chunks.map(f => (
-                <ListItem key={f} disablePadding sx={{ mb: 0.5 }}>
-                  <ListItemButton 
-                      selected={selectedChunk === f} 
-                      onClick={() => setSelectedChunk(f)} 
-                      sx={{ 
-                          borderRadius: 1, 
-                          '&.Mui-selected': { bgcolor: '#2563eb', color: 'white' },
-                          '&.Mui-selected:hover': { bgcolor: '#1d4ed8' }
-                      }}
-                  >
-                      <ListItemIcon sx={{ color: 'inherit', minWidth: 32 }}>
-                          <VideoLibrary fontSize="small" />
-                      </ListItemIcon>
-                      <ListItemText 
-                          primary={f.replace("_flagged_for_human.json", "").replace("_corrected.json", " (已修正)")} 
-                          primaryTypographyProps={{ fontSize: '0.8rem', noWrap: true }} 
+      {/* 1. 頂部導覽列 */}
+      <TopBar 
+        allSpeakers={allSpeakers}
+        speakerMap={speakerMap}
+        onRenameSpeaker={renameSpeaker}
+        onUploadOpen={() => setIsUploadOpen(true)}
+        onSave={handleSaveWrapper}
+        hasUnsavedChanges={hasUnsavedChanges}
+        loading={loading}
+      />
+
+      {/* 2. 主內容區 */}
+      <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+          
+          {/* === 左欄：影片 + 控制 + 檔案列表 === */}
+          <Box sx={{ width: '40%', display: 'flex', flexDirection: 'column', borderRight: '1px solid #334155', bgcolor: '#000' }}>
+              
+              {/* 影片播放器 */}
+              <Box sx={{ width: '100%', bgcolor: 'black', display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '200px' }}>
+                  {mediaFileName ? (
+                      <video 
+                          ref={videoRef} 
+                          controls 
+                          src={`${STATIC_BASE}/${encodeURI(mediaFileName)}`} 
+                          style={{ width: '100%', height: 'auto', maxHeight: '50vh', objectFit: 'contain' }} 
                       />
-                  </ListItemButton>
-              </ListItem>
-            ))}
-         </List>
-      </Drawer>
+                  ) : (
+                      <Box sx={{ p: 4, color: '#64748b', textAlign: 'center' }}>
+                          <Typography>請選擇影片或 Chunk 檔案</Typography>
+                      </Box>
+                  )}
+              </Box>
 
-      <Box component="main" sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-        
-        {/* 全域錯誤提示 */}
-        {error && (
-          <Alert severity="error" sx={{ m: 2, mb: 0 }}>
-            {error}
-          </Alert>
-        )}
-        
-        {/* TopBar */}
-        <Paper square elevation={0} sx={{ height: 64, px: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: '#1e293b', borderBottom: '1px solid #334155' }}>
-            
-            {/* Alias 編輯區 */}
-            <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', alignItems: 'center', flex: 1, mr: 4 }}>
-                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold' }}>ALIAS:</Typography>
-                {allSpeakers.map(spk => (
-                    <Box key={spk} sx={{ display: 'flex', alignItems: 'center', bgcolor: '#334155', borderRadius: 8, px: 1.5, py: 0.5, border: '1px solid #475569' }}>
-                        <Typography variant="caption" sx={{ color: '#94a3b8', mr: 1 }}>{spk}</Typography>
-                        <input 
-                            value={speakerMap[spk] || ''} 
-                            onChange={(e) => renameSpeaker(spk, e.target.value)} 
-                            placeholder="別名" 
-                            style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.85rem', width: 60, outline: 'none', fontWeight: 'bold' }} 
-                        />
-                    </Box>
-                ))}
-            </Box>
+              {/* 控制面板 */}
+              <Box sx={{ p: 2, bgcolor: '#0f172a', borderBottom: '1px solid #334155' }}>
+                  <Grid container spacing={2} alignItems="center">
+                      {/* ★★★ 關鍵修正：使用 size 屬性 (MUI v6) ★★★ */}
+                      <Grid size={7}>
+                          <Select fullWidth size="small" value={mediaFileName} onChange={(e) => setMediaFileName(e.target.value)} sx={{ color: 'white', bgcolor: '#1e293b', '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }}>
+                              {availableVideos.length === 0 && <MenuItem disabled>找不到任何影片</MenuItem>}
+                              {availableVideos.map(v => <MenuItem key={v.path} value={v.path}>{v.name}</MenuItem>)}
+                          </Select>
+                      </Grid>
+                      <Grid size={5}>
+                          <TextField 
+                              fullWidth 
+                              size="small" 
+                              placeholder="跳轉 (如 1:20)" 
+                              value={jumpInput}
+                              onChange={(e) => setJumpInput(e.target.value)}
+                              onKeyDown={(e) => e.key === 'Enter' && handleManualJump()}
+                              sx={{ bgcolor: '#1e293b', input: { color: 'white' }, fieldset: { borderColor: '#475569' } }}
+                              InputProps={{
+                                  endAdornment: (
+                                      <InputAdornment position="end">
+                                          <IconButton size="small" onClick={handleManualJump} sx={{ color: '#38bdf8' }}>
+                                              <PlayArrow />
+                                          </IconButton>
+                                      </InputAdornment>
+                                  ),
+                                  startAdornment: (
+                                      <InputAdornment position="start">
+                                          <Timer sx={{ color: '#64748b', fontSize: 18 }} />
+                                      </InputAdornment>
+                                  )
+                              }}
+                          />
+                      </Grid>
+                  </Grid>
+              </Box>
 
-            <Button 
-              variant="contained" 
-              color={hasUnsavedChanges ? "warning" : "primary"} 
-              startIcon={<Save/>} 
-              disabled={!hasUnsavedChanges || loading} 
-              onClick={handleSaveWrapper}
-            >
-                {loading ? 'Saving...' : 'Save Changes'}
-            </Button>
-        </Paper>
+              {/* 檔案列表 */}
+              <Box sx={{ flex: 1, overflowY: 'auto', p: 2, bgcolor: '#0f172a' }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1, color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 1 }}>
+                      <FolderOpen fontSize="small"/> 專案檔案列表
+                  </Typography>
+                  <List disablePadding>
+                      {chunks.map(f => (
+                          <Paper key={f} sx={{ mb: 1, bgcolor: selectedChunk === f ? '#1e293b' : '#1e293b80', border: selectedChunk === f ? '1px solid #38bdf8' : '1px solid transparent' }}>
+                              <ListItemButton 
+                                  selected={selectedChunk === f} 
+                                  onClick={() => setSelectedChunk(f)}
+                                  sx={{ borderRadius: 1 }}
+                              >
+                                  <ListItemIcon sx={{ color: selectedChunk === f ? '#38bdf8' : '#64748b', minWidth: 36 }}>
+                                      <VideoLibrary fontSize="small" />
+                                  </ListItemIcon>
+                                  <ListItemText 
+                                      primary={(() => {
+                                          const parts = f.split('/'); 
+                                          if (parts.length >= 2) return parts[parts.length-2]; 
+                                          return f.replace(".json", "");
+                                      })()}
+                                      secondary={f.split('/').pop()?.replace('.json', '')} 
+                                      primaryTypographyProps={{ fontSize: '0.85rem', fontWeight: selectedChunk === f ? 'bold' : 'normal', color: 'white' }}
+                                      secondaryTypographyProps={{ fontSize: '0.75rem', color: '#94a3b8' }}
+                                  />
+                              </ListItemButton>
+                          </Paper>
+                      ))}
+                  </List>
+              </Box>
+          </Box>
 
-        <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
-            
-            {/* 左側：影片區 */}
-            <Box sx={{ width: '45%', bgcolor: '#000', display:'flex', flexDirection:'column' }}>
-                <Box sx={{ p: 1, bgcolor: '#0f172a', borderBottom: '1px solid #334155' }}>
-                    <Select fullWidth size="small" value={mediaFileName} onChange={(e) => setMediaFileName(e.target.value)} sx={{color:'white', bgcolor: '#1e293b'}}>
-                        {availableVideos.length === 0 && <MenuItem disabled>找不到任何影片</MenuItem>}
-                        {availableVideos.map(v => <MenuItem key={v.path} value={v.path}>{v.name}</MenuItem>)}
-                    </Select>
-                </Box>
-                <Box flex={1} display="flex" justifyContent="center" alignItems="center">
-                    {mediaFileName && (
-                        <video ref={videoRef} controls src={`${STATIC_BASE}/${encodeURI(mediaFileName)}`} style={{width:'100%', maxHeight:'100%'}} />
-                    )}
-                </Box>
-            </Box>
-
-            {/* 右側：逐字稿列表 */}
-            <Box sx={{ width: '55%', bgcolor: '#f8fafc', overflowY: 'auto', p: 3, pb: 10 }}>
-                {segments.length === 0 && !loading && (
-                    <Box sx={{ textAlign: 'center', mt: 10, color: '#94a3b8' }}>
-                        <Typography>請從左側選擇一個檔案開始編輯</Typography>
-                    </Box>
-                )}
-                
-                {segments.map((seg, index) => (
-                    <TranscriptItem 
-                        key={seg.sentence_id} 
-                        index={index}
-                        segment={seg}
-                        videoOffset={videoOffset}
-                        displaySpeaker={speakerMap[seg.speaker] || seg.speaker}
-                        isDoctor={(speakerMap[seg.speaker] || seg.speaker).includes('醫師')}
-                        
-                        onTextChange={updateText}
-                        onSyncTime={handleSyncTime}
-                        onJumpToTime={handleJumpToTime}
-                        onSpeakerClick={handleSpeakerClick}
-                    />
-                ))}
-            </Box>
-        </Box>
-
-        {/* 選單 Components */}
-        <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
-            {allSpeakers.map(spk => <MenuItem key={spk} onClick={() => handleSelectExistingSpeaker(spk)}>{speakerMap[spk] || spk}</MenuItem>)}
-            <Divider /><MenuItem onClick={() => { setAnchorEl(null); setIsNewSpeakerDialogOpen(true); }} sx={{color:'blue'}}><Add/> 新增...</MenuItem>
-        </Menu>
-
-        <Dialog open={isNewSpeakerDialogOpen} onClose={() => setIsNewSpeakerDialogOpen(false)}>
-            <DialogTitle>新增語者</DialogTitle>
-            <DialogContent><TextField autoFocus margin="dense" label="名稱" fullWidth value={newSpeakerName} onChange={(e) => setNewSpeakerName(e.target.value)} /></DialogContent>
-            <DialogActions><Button onClick={() => setIsNewSpeakerDialogOpen(false)}>取消</Button><Button onClick={confirmNewSpeaker}>確認</Button></DialogActions>
-        </Dialog>
-
-        <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast({...toast, open:false})}><Alert severity={toast.type} variant="filled">{toast.msg}</Alert></Snackbar>
+          {/* === 右欄：逐字稿編輯區 === */}
+          <Box sx={{ width: '60%', bgcolor: '#f8fafc', overflowY: 'auto', p: 3, pb: 10 }}>
+              {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
+              
+              {segments.length === 0 && !loading && (
+                  <Box sx={{ textAlign: 'center', mt: 10, color: '#94a3b8' }}>
+                      <Typography>請從左下方選擇一個檔案開始編輯</Typography>
+                  </Box>
+              )}
+              
+              {segments.map((seg, index) => (
+                  <TranscriptItem 
+                      key={seg.sentence_id} 
+                      index={index}
+                      segment={seg}
+                      videoOffset={videoOffset}
+                      displaySpeaker={speakerMap[seg.speaker] || seg.speaker}
+                      isDoctor={(speakerMap[seg.speaker] || seg.speaker).includes('醫師')}
+                      
+                      onTextChange={updateText}
+                      onSyncTime={handleSyncTime}
+                      onJumpToTime={handleJumpToTime}
+                      onSpeakerClick={handleSpeakerClick}
+                      onDelete={deleteSegment}
+                      onAddAfter={addSegment}
+                  />
+              ))}
+          </Box>
       </Box>
+
+      {/* Dialogs */}
+      <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
+          {allSpeakers.map(spk => <MenuItem key={spk} onClick={() => handleSelectExistingSpeaker(spk)}>{speakerMap[spk] || spk}</MenuItem>)}
+          <Divider /><MenuItem onClick={() => { setAnchorEl(null); setIsNewSpeakerDialogOpen(true); }} sx={{color:'blue'}}><Add/> 新增...</MenuItem>
+      </Menu>
+
+      <Dialog open={isNewSpeakerDialogOpen} onClose={() => setIsNewSpeakerDialogOpen(false)}>
+          <DialogTitle>新增語者</DialogTitle>
+          <DialogContent><TextField autoFocus margin="dense" label="名稱" fullWidth value={newSpeakerName} onChange={(e) => setNewSpeakerName(e.target.value)} /></DialogContent>
+          <DialogActions><Button onClick={() => setIsNewSpeakerDialogOpen(false)}>取消</Button><Button onClick={confirmNewSpeaker}>確認</Button></DialogActions>
+      </Dialog>
+
+      <Dialog open={isUploadOpen} onClose={() => !isUploading && setIsUploadOpen(false)}>
+          <DialogTitle>上傳新影片</DialogTitle>
+          <DialogContent sx={{ pt: 2, minWidth: 400, display: 'flex', flexDirection: 'column', gap: 2 }}>
+              <Autocomplete
+                  freeSolo
+                  options={existingTesters}
+                  value={testerName}
+                  onInputChange={(_event, newInputValue) => {
+                      setTesterName(newInputValue);
+                  }}
+                  renderInput={(params) => (
+                      <TextField 
+                          {...params} 
+                          label="測試者姓名 (Tester Name)" 
+                          helperText="可選擇既有人員或輸入新名字"
+                          fullWidth 
+                      />
+                  )}
+              />
+              <Button variant="outlined" component="label" fullWidth sx={{ height: 50, borderStyle: 'dashed' }}>
+                  {uploadFile ? uploadFile.name : "選擇檔案 (支援 .mp4, .mp3)"}
+                  <input type="file" hidden accept="video/*,audio/*" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
+              </Button>
+          </DialogContent>
+          <DialogActions>
+              <Button onClick={() => setIsUploadOpen(false)} disabled={isUploading}>取消</Button>
+              <Button onClick={handleUploadConfirm} variant="contained" disabled={isUploading || !uploadFile || !testerName}>
+                  {isUploading ? "上傳中..." : "開始上傳"}
+              </Button>
+          </DialogActions>
+      </Dialog>
+
+      <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast({...toast, open:false})}><Alert severity={toast.type} variant="filled">{toast.msg}</Alert></Snackbar>
     </Box>
   );
 }

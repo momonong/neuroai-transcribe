@@ -18,4 +18,4 @@ RUN pip install --no-cache-dir --default-timeout=1000 -r requirements.txt
 COPY . .
 
 # 啟動指令 (注意這裡綁定 0.0.0.0，container 內部 port 設為 8000)
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

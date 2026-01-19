@@ -20,7 +20,7 @@ client = OpenAI(base_url=base_url, api_key=api_key, timeout=600.0)
 agent = instructor.patch(client, mode=instructor.Mode.JSON)
 
 # =========================================================
-# 🚩 The Flag Schema (只標記，不修改)
+#    The Flag Schema 
 # =========================================================
 
 class SentenceHealth(BaseModel):
