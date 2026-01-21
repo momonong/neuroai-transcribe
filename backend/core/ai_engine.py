@@ -5,11 +5,11 @@ import shutil
 from typing import List, Optional
 
 # 引入檔案管理器和其他模組
-from core.file_manager import file_manager
-from core.split import SmartAudioSplitter
-from core.pipeline import PipelinePhase2
-from core.stitch import run_stitching_logic
-from core.flag import run_anomaly_detector
+from .file_manager import file_manager
+from .split import SmartAudioSplitter
+from .pipeline import PipelinePhase2
+from .stitch import run_stitching_logic
+from .flag import run_anomaly_detector
 
 def run_neuroai_pipeline(video_path: str, project_name: Optional[str] = None):
     """

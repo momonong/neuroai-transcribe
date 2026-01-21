@@ -27,11 +27,11 @@ class FileManager:
         else:
             self.base_dir = Path(base_dir)
             
-        # 定義標準資料夾結構
+        # 定義標準資料夾結構 - 新的扁平化結構
         self.data_dir = self.base_dir / "data"
-        self.asd_dir = self.data_dir / "ASD"
         self.temp_chunks_dir = self.data_dir / "temp_chunks"
-        self.output_dir = self.data_dir / "output"
+        self.db_dir = self.data_dir / "db"
+        self.text_dir = self.data_dir / "text"
         
         # 確保資料夾存在
         self._ensure_directories()
@@ -40,9 +40,9 @@ class FileManager:
         """確保所有必要的資料夾存在"""
         directories = [
             self.data_dir,
-            self.asd_dir, 
             self.temp_chunks_dir,
-            self.output_dir
+            self.db_dir,
+            self.text_dir
         ]
         
         for directory in directories:
@@ -52,32 +52,41 @@ class FileManager:
     # 路徑生成方法
     # ==========================================
     
-    def get_project_dir(self, project_name: str) -> Path:
-        """取得專案目錄路徑"""
-        project_dir = self.output_dir / project_name
-        project_dir.mkdir(parents=True, exist_ok=True)
-        return project_dir
+    def get_case_dir(self, case_name: str) -> Path:
+        """取得案例目錄路徑 (直接在 data/ 下)"""
+        case_dir = self.data_dir / case_name
+        case_dir.mkdir(parents=True, exist_ok=True)
+        return case_dir
     
-    def get_temp_chunks_dir(self, project_name: Optional[str] = None) -> Path:
+    def get_temp_chunks_dir(self, case_name: Optional[str] = None) -> Path:
         """取得暫存 chunks 目錄"""
-        if project_name:
-            chunks_dir = self.get_project_dir(project_name) / "temp_chunks"
+        if case_name:
+            # 在特定案例目錄下建立 temp_chunks (如果需要的話)
+            chunks_dir = self.get_case_dir(case_name) / "temp_chunks"
         else:
+            # 使用全域 temp_chunks 目錄
             chunks_dir = self.temp_chunks_dir
         
         chunks_dir.mkdir(parents=True, exist_ok=True)
         return chunks_dir
     
     def get_chunk_file_path(self, chunk_id: int, start_ms: int, end_ms: int, 
-                           project_name: Optional[str] = None, suffix: str = "") -> Path:
+                           case_name: Optional[str] = None, suffix: str = "") -> Path:
         """生成 chunk 檔案路徑"""
-        chunks_dir = self.get_temp_chunks_dir(project_name)
-        filename = f"chunk_{chunk_id}_{start_ms}_{end_ms}{suffix}.wav"
-        return chunks_dir / filename
+        if case_name:
+            # 直接放在案例目錄下
+            case_dir = self.get_case_dir(case_name)
+            filename = f"chunk_{chunk_id}_{start_ms}_{end_ms}{suffix}.wav"
+            return case_dir / filename
+        else:
+            # 使用全域 temp_chunks
+            chunks_dir = self.get_temp_chunks_dir()
+            filename = f"chunk_{chunk_id}_{start_ms}_{end_ms}{suffix}.wav"
+            return chunks_dir / filename
     
-    def get_output_file_path(self, project_name: str, filename: str) -> Path:
+    def get_output_file_path(self, case_name: str, filename: str) -> Path:
         """取得輸出檔案路徑"""
-        return self.get_project_dir(project_name) / filename
+        return self.get_case_dir(case_name) / filename
     
     # ==========================================
     # 影片檔案管理
@@ -85,7 +94,7 @@ class FileManager:
     
     def find_video_files(self, pattern: Optional[str] = None) -> List[Dict[str, Any]]:
         """
-        搜尋影片檔案
+        搜尋影片檔案 - 新的扁平化結構
         
         Args:
             pattern: 搜尋模式，如檔名的一部分
@@ -93,39 +102,44 @@ class FileManager:
         Returns:
             影片檔案清單，包含路徑和元資料
         """
-        video_extensions = ["*.mp4", "*.MP4", "*.mov", "*.MOV", "*.avi", "*.AVI"]
+        video_extensions = ["*.mp4", "*.MP4", "*.mov", "*.MOV", "*.avi", "*.AVI", "*.mp3", "*.wav"]
         video_files = []
         
-        for ext in video_extensions:
-            # 遞迴搜尋 ASD 目錄
-            pattern_path = self.asd_dir / "**" / ext
-            files = glob.glob(str(pattern_path), recursive=True)
+        # 直接掃描 data 目錄下的所有案例資料夾
+        if not self.data_dir.exists():
+            return video_files
             
-            for file_path in files:
-                file_path = Path(file_path)
+        for case_dir in self.data_dir.iterdir():
+            # 跳過系統資料夾
+            if not case_dir.is_dir() or case_dir.name in ["temp_chunks", "db", "text", "__pycache__"]:
+                continue
                 
-                # 如果有指定模式，進行過濾
-                if pattern and pattern.lower() not in file_path.name.lower():
-                    continue
-                
-                # 計算相對於 data 目錄的路徑
-                try:
-                    relative_path = file_path.relative_to(self.data_dir)
-                    # 轉換為 URL 友善的路徑 (使用正斜線)
-                    url_path = str(relative_path).replace("\\", "/")
+            # 在每個案例資料夾中搜尋影片
+            for ext in video_extensions:
+                for file_path in case_dir.glob(ext):
+                    # 如果有指定模式，進行過濾
+                    if pattern and pattern.lower() not in file_path.name.lower():
+                        continue
                     
-                    video_files.append({
-                        "name": file_path.name,
-                        "path": url_path,
-                        "full_path": str(file_path),
-                        "size": file_path.stat().st_size if file_path.exists() else 0,
-                        "modified": datetime.fromtimestamp(
-                            file_path.stat().st_mtime
-                        ).isoformat() if file_path.exists() else None
-                    })
-                except ValueError:
-                    # 檔案不在 data 目錄下，跳過
-                    continue
+                    # 計算相對於 data 目錄的路徑
+                    try:
+                        relative_path = file_path.relative_to(self.data_dir)
+                        # 轉換為 URL 友善的路徑 (使用正斜線)
+                        url_path = str(relative_path).replace("\\", "/")
+                        
+                        video_files.append({
+                            "name": file_path.name,
+                            "path": url_path,
+                            "case_name": case_dir.name,
+                            "full_path": str(file_path),
+                            "size": file_path.stat().st_size if file_path.exists() else 0,
+                            "modified": datetime.fromtimestamp(
+                                file_path.stat().st_mtime
+                            ).isoformat() if file_path.exists() else None
+                        })
+                    except ValueError:
+                        # 檔案不在 data 目錄下，跳過
+                        continue
         
         # 按修改時間排序 (最新的在前)
         video_files.sort(key=lambda x: x["modified"] or "", reverse=True)
@@ -210,25 +224,31 @@ class FileManager:
             print(f"❌ 載入 JSON 失敗: {e}")
             return None
     
-    def get_chunk_json_files(self, project_name: Optional[str] = None, 
+    def get_chunk_json_files(self, case_name: Optional[str] = None, 
                            file_type: str = "flagged") -> List[str]:
         """
         取得 chunk JSON 檔案清單
         
         Args:
-            project_name: 專案名稱
+            case_name: 案例名稱
             file_type: 檔案類型 ("flagged", "corrected", "all")
             
         Returns:
             檔案名稱清單
         """
-        chunks_dir = self.get_temp_chunks_dir(project_name)
+        if case_name:
+            # 從特定案例目錄讀取
+            case_dir = self.get_case_dir(case_name)
+            search_dir = case_dir
+        else:
+            # 從全域 temp_chunks 讀取
+            search_dir = self.temp_chunks_dir
         
-        if not chunks_dir.exists():
+        if not search_dir.exists():
             return []
         
         files = []
-        for file_path in chunks_dir.glob("*.json"):
+        for file_path in search_dir.glob("*.json"):
             filename = file_path.name
             
             if file_type == "flagged" and "_flagged_for_human.json" in filename:
@@ -248,63 +268,76 @@ class FileManager:
         return files
     
     # ==========================================
-    # 專案管理
+    # 案例管理 (取代原本的專案管理)
     # ==========================================
     
-    def create_project(self, video_path: str, project_name: Optional[str] = None) -> str:
+    def create_case(self, video_path: str, case_name: Optional[str] = None) -> str:
         """
-        建立新專案
+        建立新案例
         
         Args:
             video_path: 影片檔案路徑
-            project_name: 專案名稱，如果不提供則自動生成
+            case_name: 案例名稱，如果不提供則自動生成
             
         Returns:
-            專案名稱
+            案例名稱
         """
-        if project_name is None:
-            # 從影片檔名生成專案名稱
+        if case_name is None:
+            # 從影片檔名生成案例名稱
             video_name = Path(video_path).stem
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            project_name = f"{video_name}_{timestamp}"
+            timestamp = datetime.now().strftime("%Y%m%d-%H%M")
+            case_name = f"{timestamp}-{video_name}"
         
-        project_dir = self.get_project_dir(project_name)
+        case_dir = self.get_case_dir(case_name)
         
-        # 建立專案設定檔
-        project_config = {
-            "project_name": project_name,
+        # 建立案例設定檔
+        case_config = {
+            "case_name": case_name,
             "video_path": video_path,
             "created_at": datetime.now().isoformat(),
             "status": "created"
         }
         
-        config_path = project_dir / "project.json"
-        self.save_json(project_config, config_path, backup=False)
+        config_path = case_dir / "case.json"
+        self.save_json(case_config, config_path, backup=False)
         
-        return project_name
+        return case_name
     
-    def get_project_list(self) -> List[Dict[str, Any]]:
-        """取得所有專案清單"""
-        projects = []
+    def get_case_list(self) -> List[Dict[str, Any]]:
+        """取得所有案例清單"""
+        cases = []
         
-        if not self.output_dir.exists():
-            return projects
+        if not self.data_dir.exists():
+            return cases
         
-        for project_dir in self.output_dir.iterdir():
-            if project_dir.is_dir():
-                config_path = project_dir / "project.json"
+        for case_dir in self.data_dir.iterdir():
+            if case_dir.is_dir() and case_dir.name not in ["temp_chunks", "db", "text", "__pycache__"]:
+                config_path = case_dir / "case.json"
                 config = self.load_json(config_path)
                 
-                if config:
-                    projects.append({
-                        "name": project_dir.name,
-                        "config": config,
-                        "path": str(project_dir)
-                    })
+                # 如果沒有設定檔，嘗試從資料夾內容推斷
+                if not config:
+                    # 檢查是否有影片檔案
+                    video_files = []
+                    for ext in ["*.mp4", "*.MP4", "*.mp3", "*.wav"]:
+                        video_files.extend(list(case_dir.glob(ext)))
+                    
+                    config = {
+                        "case_name": case_dir.name,
+                        "video_path": str(video_files[0]) if video_files else None,
+                        "created_at": datetime.fromtimestamp(case_dir.stat().st_mtime).isoformat(),
+                        "status": "imported"
+                    }
+                
+                cases.append({
+                    "name": case_dir.name,
+                    "config": config,
+                    "path": str(case_dir)
+                })
         
         # 按建立時間排序
-        projects.sort(key=lambda x: x["config"].get("created_at", ""), reverse=True)
-        return projects
+        cases.sort(key=lambda x: x["config"].get("created_at", ""), reverse=True)
+        return cases
 
 
 # 建立全域實例

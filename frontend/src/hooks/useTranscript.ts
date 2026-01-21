@@ -1,8 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import type { ChunkData, TranscriptSegment } from '../types';
+import type { ChunkData, TranscriptSegment, ChunkTimepoint } from '../types';
 
-// ★ 改成相對路徑，讓 Vite Proxy 處理
 const API_BASE = `/api`;
 
 export const useTranscript = () => {
@@ -12,26 +11,40 @@ export const useTranscript = () => {
   const [speakerMap, setSpeakerMap] = useState<Record<string, string>>({});
   const [videoOffset, setVideoOffset] = useState<number>(0);
   const [mediaFileName, setMediaFileName] = useState<string>('');
+  const [chunkTimepoints, setChunkTimepoints] = useState<ChunkTimepoint[]>([]);
+  const [fileType, setFileType] = useState<'flagged' | 'edited' | 'original'>('original');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [existingTesters, setExistingTesters] = useState<string[]>([]); // ★ 案例清單
 
-  // 初始化載入 chunk 列表
-  useEffect(() => {
+  // 1. 載入列表
+  const fetchChunks = useCallback(() => {
     axios.get(`${API_BASE}/temp/chunks`)
       .then(res => {
         if (res.data.files) {
           setChunks(res.data.files);
-          if (res.data.files.length > 0) setSelectedChunk(res.data.files[0]);
+          if (!selectedChunk && res.data.files.length > 0) {
+             setSelectedChunk(res.data.files[0]);
+          }
         }
       })
-      .catch(err => {
-        console.error("Failed to load chunks:", err);
-        setError("無法載入檔案列表，請確認後端是否已啟動 (Port 8001)");
-      });
+      .catch(err => console.error(err));
+  }, [selectedChunk]);
+
+  // ★ 新增：取得案例名單
+  const fetchTesters = useCallback(() => {
+      axios.get(`${API_BASE}/testers`)
+        .then(res => setExistingTesters(res.data))
+        .catch(console.error);
   }, []);
 
-  // 當選擇的 Chunk 改變時，載入詳細資料
+  useEffect(() => {
+    fetchChunks();
+    fetchTesters();
+  }, [fetchChunks, fetchTesters]);
+
+  // 2. 載入詳細資料
   useEffect(() => {
     if (!selectedChunk) return;
     setLoading(true);
@@ -42,6 +55,8 @@ export const useTranscript = () => {
         const data = res.data;
         setVideoOffset(data.video_offset || 0);
         if (data.media_file) setMediaFileName(data.media_file);
+        if (data.chunk_timepoints) setChunkTimepoints(data.chunk_timepoints);
+        if (data.file_type) setFileType(data.file_type);
         
         if (Array.isArray(data)) {
            setSegments(data);
@@ -54,12 +69,13 @@ export const useTranscript = () => {
       })
       .catch(err => {
         console.error(err);
-        setError("讀取逐字稿資料失敗");
+        setError("讀取資料失敗");
       })
       .finally(() => setLoading(false));
   }, [selectedChunk]);
 
-  // 修改文字
+  // --- 編輯功能 ---
+
   const updateText = useCallback((id: number, newText: string) => {
     setSegments(prev => prev.map(seg => 
       seg.sentence_id === id ? { ...seg, text: newText } : seg
@@ -67,7 +83,6 @@ export const useTranscript = () => {
     setHasUnsavedChanges(true);
   }, []);
 
-  // 更新時間
   const updateSegmentTime = useCallback((index: number, newRelativeStart: number) => {
     setSegments(prev => {
         const newSegments = [...prev];
@@ -77,7 +92,6 @@ export const useTranscript = () => {
     setHasUnsavedChanges(true);
   }, []);
 
-  // 更新語者
   const updateSpeaker = useCallback((index: number, newSpeakerId: string) => {
     setSegments(prev => {
         const copy = [...prev];
@@ -92,6 +106,40 @@ export const useTranscript = () => {
     setHasUnsavedChanges(true);
   }, []);
 
+  // ★★★ 新增：刪除功能 ★★★
+  const deleteSegment = useCallback((index: number) => {
+    setSegments(prev => {
+        const newSegs = [...prev];
+        newSegs.splice(index, 1);
+        return newSegs;
+    });
+    setHasUnsavedChanges(true);
+  }, []);
+
+  // ★★★ 新增：插入功能 ★★★
+  const addSegment = useCallback((index: number) => {
+    setSegments(prev => {
+        const newSegs = [...prev];
+        const currentSeg = newSegs[index];
+        const newStart = currentSeg ? currentSeg.end : 0;
+        
+        const newSegment: TranscriptSegment = {
+            sentence_id: Date.now(),
+            start: newStart,
+            end: newStart + 2.0,
+            text: "新對話...",
+            speaker: currentSeg ? currentSeg.speaker : "SPEAKER_00",
+            status: "new",
+            verification_score: 1.0,
+            needs_review: false,
+            review_reason: null
+        };
+        newSegs.splice(index + 1, 0, newSegment);
+        return newSegs;
+    });
+    setHasUnsavedChanges(true);
+  }, []);
+
   const save = async () => {
     if (!selectedChunk) return;
     await axios.post(`${API_BASE}/temp/save`, {
@@ -102,10 +150,25 @@ export const useTranscript = () => {
     setHasUnsavedChanges(false);
   };
 
+  // ★★★ 新增：上傳功能 ★★★
+  const uploadVideo = async (file: File, caseName: string) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('case_name', caseName);
+      
+      await axios.post(`${API_BASE}/upload`, formData, {
+          headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      fetchChunks(); 
+      fetchTesters();
+  };
+
   return {
     chunks, selectedChunk, setSelectedChunk,
     segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
-    loading, error, hasUnsavedChanges,
-    updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save
+    chunkTimepoints, fileType,
+    loading, error, hasUnsavedChanges, existingTesters, // ★ 記得匯出 existingTesters (現在是案例清單)
+    updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
+    deleteSegment, addSegment, uploadVideo, fetchTesters // ★ 記得匯出這些 function
   };
 };
