@@ -129,9 +129,34 @@ function App() {
 
   const handleSaveWrapper = async () => {
       try {
+          // 執行存檔
           await save();
-          setToast({ open: true, msg: '儲存成功', type: 'success' });
+          
+          setToast({ open: true, msg: '儲存成功！', type: 'success' });
+
+          // === 關鍵修正：存檔後的自動更新邏輯 ===
+          if (selectedCase && selectedChunk) {
+              // 1. 重新抓取該 Case 的 Chunk 列表
+              // 因為後端現在有 "Winner Takes All" 機制，
+              // 存檔產生 _edited.json 後，列表內容會改變 (flagged 會被 edited 取代)
+              const res = await axios.get(`/api/temp/chunks?case=${selectedCase}`);
+              const newFiles = res.data.files;
+              setCaseChunks(newFiles);
+
+              // 2. 自動切換到新的檔案 (如果檔名變了)
+              // 例如從 "...flagged.json" 變成 "...edited.json"
+              // 我們透過比對 "chunk 編號" 來找到對應的新檔案
+              const currentChunkId = selectedChunk.split('/').pop()?.split('_').slice(0, 2).join('_'); // 取得 "chunk_1"
+              
+              const newMatchingFile = newFiles.find((f: string) => f.includes(currentChunkId || ""));
+              
+              if (newMatchingFile && newMatchingFile !== selectedChunk) {
+                  console.log("🔄 Auto-switching to edited file:", newMatchingFile);
+                  setSelectedChunk(newMatchingFile);
+              }
+          }
       } catch(e) {
+          console.error(e);
           setToast({ open: true, msg: '儲存失敗', type: 'error' });
       }
   };
