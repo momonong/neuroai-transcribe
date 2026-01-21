@@ -1,5 +1,6 @@
-import { useState, useRef, useMemo, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { 
+  Box, List, ListItemButton, ListItemIcon, ListItemText, 
   Box, List, ListItemButton, ListItemIcon, ListItemText, 
   Paper, Button, Select, MenuItem, Snackbar, Alert, Typography, Divider, 
   Menu, Dialog, DialogTitle, DialogContent, TextField, DialogActions,
@@ -16,10 +17,20 @@ import { TopBar } from './components/TopBar';
 
 const STATIC_BASE = `/static`;
 
+// 時間格式化 (mm:ss)
+const formatMs = (ms: number) => {
+    if (isNaN(ms)) return "00:00";
+    const totalSeconds = Math.floor(ms / 1000);
+    const m = Math.floor(totalSeconds / 60);
+    const s = totalSeconds % 60;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
 function App() {
   const { 
-    chunks, selectedChunk, setSelectedChunk,
+    selectedChunk, setSelectedChunk,
     segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
+    chunkTimepoints, fileType,
     hasUnsavedChanges, loading, error,
     updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
     deleteSegment, addSegment, uploadVideo, existingTesters, fetchTesters
@@ -47,27 +58,44 @@ function App() {
   // 取得影片列表
   useMemo(() => {
      axios.get(`/api/videos`)
-       .then(res => setAvailableVideos(res.data))
-       .catch(err => {
-         console.error('Failed to load videos:', err);
-         setToast({ open: true, msg: '無法載入影片清單', type: 'error' });
-       });
+       .then(res => {
+         const uniqueVideos = Array.from(
+             new Map(res.data.map((item: any) => [item.path, item])).values()
+         ) as {path: string, name: string}[];
+         setAvailableVideos(uniqueVideos);
+       })
+       .catch(console.error);
+  };
+
+  useEffect(() => {
+      fetchVideos();
   }, []);
 
-  const allSpeakers = useMemo(() => {
-    const rawSpeakers = new Set(segments.map(seg => seg.speaker));
-    Object.keys(speakerMap).forEach(k => rawSpeakers.add(k));
-    return Array.from(rawSpeakers).sort();
-  }, [segments, speakerMap]);
+  // 2. 影片變更 -> 鎖定 Case -> 重新撈取該 Case 的 Chunks (透過 API 篩選)
+  useEffect(() => {
+      if (mediaFileName) {
+          const parts = mediaFileName.split('/');
+          if (parts.length >= 2) {
+              const caseName = parts[0];
+              setSelectedCase(caseName);
+              // 呼叫 API 取得過濾後的乾淨列表
+              axios.get(`/api/temp/chunks?case=${caseName}`)
+                   .then(res => {
+                       setCaseChunks(res.data.files);
+                   })
+                   .catch(console.error);
+          }
+      }
+  }, [mediaFileName]);
 
   // --- Functions ---
 
   const handleJumpToTime = useCallback((relativeStart: number) => {
     if (videoRef.current) {
-      videoRef.current.currentTime = videoOffset + relativeStart;
+      videoRef.current.currentTime = relativeStart;
       videoRef.current.play();
     }
-  }, [videoOffset]);
+  }, []);
 
   const handleSyncTime = useCallback((index: number) => {
     if (!videoRef.current) return;
@@ -123,12 +151,28 @@ function App() {
     setAnchorEl(null);
   };
 
-  const confirmNewSpeaker = () => {
-    if (activeSegmentIndex !== null && newSpeakerName.trim()) {
-        updateSpeaker(activeSegmentIndex, newSpeakerName.trim());
-    }
-    setIsNewSpeakerDialogOpen(false);
+  const handleUploadConfirm = async () => {
+      if(!uploadFile || !uploadCaseName) return;
+      setIsUploading(true);
+      try {
+          await uploadVideo(uploadFile, uploadCaseName);
+          setToast({ open: true, msg: '上傳成功！', type: 'success' });
+          setIsUploadOpen(false);
+          fetchVideos();
+          fetchTesters();
+      } catch(e) {
+          setToast({ open: true, msg: '上傳失敗', type: 'error' });
+      } finally {
+          setIsUploading(false);
+      }
   };
+
+  const allSpeakers = useMemo(() => {
+    const s = new Set<string>();
+    segments.forEach(seg => s.add(seg.speaker));
+    Object.keys(speakerMap).forEach(k => s.add(k));
+    return Array.from(s).sort();
+  }, [segments, speakerMap]);
 
   const handleUploadConfirm = async () => {
       if(!uploadFile || !testerName) return;

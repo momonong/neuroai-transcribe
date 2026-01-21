@@ -18,11 +18,11 @@ class Config:
         self.backend_dir = Path(__file__).parent.parent
         self.project_root = self.backend_dir.parent
         
-        # 資料目錄配置
+        # 資料目錄配置 - 新的扁平化結構
         self.data_dir = self.project_root / "data"
-        self.asd_dir = self.data_dir / "ASD"
         self.temp_chunks_dir = self.data_dir / "temp_chunks"
-        self.output_dir = self.data_dir / "output"
+        self.db_dir = self.data_dir / "db"
+        self.text_dir = self.data_dir / "text"
         
         # AI 模型配置
         self.model_cache_dir = os.getenv("MODEL_CACHE_DIR", str(self.project_root / "models"))
@@ -62,9 +62,9 @@ class Config:
         """確保所有必要的目錄存在"""
         directories = [
             self.data_dir,
-            self.asd_dir,
             self.temp_chunks_dir,
-            self.output_dir,
+            self.db_dir,
+            self.text_dir,
             Path(self.model_cache_dir)
         ]
         
@@ -77,17 +77,19 @@ class Config:
             return file_path.replace(self.tester_name, "[Name]")
         return file_path
     
-    def get_project_dir(self, project_name: str) -> Path:
-        """取得專案目錄路徑"""
-        project_dir = self.output_dir / project_name
-        project_dir.mkdir(parents=True, exist_ok=True)
-        return project_dir
+    def get_case_dir(self, case_name: str) -> Path:
+        """取得案例目錄路徑 (直接在 data/ 下)"""
+        case_dir = self.data_dir / case_name
+        case_dir.mkdir(parents=True, exist_ok=True)
+        return case_dir
     
-    def get_temp_chunks_dir(self, project_name: Optional[str] = None) -> Path:
+    def get_temp_chunks_dir(self, case_name: Optional[str] = None) -> Path:
         """取得暫存 chunks 目錄"""
-        if project_name:
-            chunks_dir = self.get_project_dir(project_name) / "temp_chunks"
+        if case_name:
+            # 在特定案例目錄下建立 temp_chunks
+            chunks_dir = self.get_case_dir(case_name) / "temp_chunks"
         else:
+            # 使用全域 temp_chunks 目錄
             chunks_dir = self.temp_chunks_dir
         
         chunks_dir.mkdir(parents=True, exist_ok=True)
@@ -98,6 +100,8 @@ class Config:
         return {
             "project_root": str(self.project_root),
             "data_dir": str(self.data_dir),
+            "temp_chunks_dir": str(self.temp_chunks_dir),
+            "db_dir": str(self.db_dir),
             "model_cache_dir": self.model_cache_dir,
             "device": self.device,
             "compute_type": self.compute_type,

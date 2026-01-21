@@ -9,16 +9,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 class SmartAudioSplitter:
-    def __init__(self, output_dir: Optional[str] = None):
+    def __init__(self, output_dir: Optional[str] = None, case_name: Optional[str] = None):
         """
         初始化音訊切分器
         
         Args:
             output_dir: 輸出目錄，如果不提供則使用檔案管理器的預設路徑
+            case_name: 案例名稱，用於決定輸出位置
         """
         if output_dir is None:
             from core.file_manager import file_manager
-            self.output_dir = str(file_manager.temp_chunks_dir)
+            if case_name:
+                # 直接輸出到案例目錄
+                self.output_dir = str(file_manager.get_case_dir(case_name))
+            else:
+                # 使用全域 temp_chunks
+                self.output_dir = str(file_manager.temp_chunks_dir)
         else:
             self.output_dir = output_dir
             
@@ -136,8 +142,10 @@ class SmartAudioSplitter:
 # 執行區段
 if __name__ == "__main__":
     video_file = os.getenv("VIDEO_FILE")
+    case_name = os.getenv("CASE_NAME")  # 新增案例名稱環境變數
+    
     if video_file:
-        splitter = SmartAudioSplitter()
+        splitter = SmartAudioSplitter(case_name=case_name)
         metadata = splitter.split_audio(video_file)
         # print(metadata) # 可以註解掉以免洗版
     else:

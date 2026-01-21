@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import type { ChunkData, TranscriptSegment } from '../types';
+import type { ChunkData, TranscriptSegment, ChunkTimepoint } from '../types';
 
 const API_BASE = `/api`;
 
@@ -11,10 +11,12 @@ export const useTranscript = () => {
   const [speakerMap, setSpeakerMap] = useState<Record<string, string>>({});
   const [videoOffset, setVideoOffset] = useState<number>(0);
   const [mediaFileName, setMediaFileName] = useState<string>('');
+  const [chunkTimepoints, setChunkTimepoints] = useState<ChunkTimepoint[]>([]);
+  const [fileType, setFileType] = useState<'flagged' | 'edited' | 'original'>('original');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [existingTesters, setExistingTesters] = useState<string[]>([]); // ★ 新增
+  const [existingTesters, setExistingTesters] = useState<string[]>([]); // ★ 案例清單
 
   // 1. 載入列表
   const fetchChunks = useCallback(() => {
@@ -30,7 +32,7 @@ export const useTranscript = () => {
       .catch(err => console.error(err));
   }, [selectedChunk]);
 
-  // ★ 新增：取得測試者名單
+  // ★ 新增：取得案例名單
   const fetchTesters = useCallback(() => {
       axios.get(`${API_BASE}/testers`)
         .then(res => setExistingTesters(res.data))
@@ -53,6 +55,8 @@ export const useTranscript = () => {
         const data = res.data;
         setVideoOffset(data.video_offset || 0);
         if (data.media_file) setMediaFileName(data.media_file);
+        if (data.chunk_timepoints) setChunkTimepoints(data.chunk_timepoints);
+        if (data.file_type) setFileType(data.file_type);
         
         if (Array.isArray(data)) {
            setSegments(data);
@@ -147,10 +151,10 @@ export const useTranscript = () => {
   };
 
   // ★★★ 新增：上傳功能 ★★★
-  const uploadVideo = async (file: File, testerName: string) => {
+  const uploadVideo = async (file: File, caseName: string) => {
       const formData = new FormData();
       formData.append('file', file);
-      formData.append('tester_name', testerName);
+      formData.append('case_name', caseName);
       
       await axios.post(`${API_BASE}/upload`, formData, {
           headers: { 'Content-Type': 'multipart/form-data' }
@@ -162,7 +166,8 @@ export const useTranscript = () => {
   return {
     chunks, selectedChunk, setSelectedChunk,
     segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
-    loading, error, hasUnsavedChanges, existingTesters, // ★ 記得匯出 existingTesters
+    chunkTimepoints, fileType,
+    loading, error, hasUnsavedChanges, existingTesters, // ★ 記得匯出 existingTesters (現在是案例清單)
     updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
     deleteSegment, addSegment, uploadVideo, fetchTesters // ★ 記得匯出這些 function
   };
