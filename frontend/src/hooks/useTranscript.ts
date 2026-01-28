@@ -16,9 +16,9 @@ export const useTranscript = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [existingTesters, setExistingTesters] = useState<string[]>([]); 
+  const [existingTesters, setExistingTesters] = useState<string[]>([]);
 
-  // 1. 載入列表
+  // 1. Load List
   const fetchChunks = useCallback(() => {
     axios.get(`${API_BASE}/temp/chunks`)
       .then(res => {
@@ -32,9 +32,8 @@ export const useTranscript = () => {
       .catch(err => console.error(err));
   }, [selectedChunk]);
 
-  // 取得案例名單
   const fetchTesters = useCallback(() => {
-      axios.get(`${API_BASE}/cases`) // 注意：API 名稱通常是 cases，如果是 testers 請自行調整
+      axios.get(`${API_BASE}/cases`)
         .then(res => setExistingTesters(res.data))
         .catch(console.error);
   }, []);
@@ -44,7 +43,7 @@ export const useTranscript = () => {
     fetchTesters();
   }, [fetchChunks, fetchTesters]);
 
-  // 2. 載入詳細資料
+  // 2. Load Details
   useEffect(() => {
     if (!selectedChunk) return;
     setLoading(true);
@@ -69,27 +68,50 @@ export const useTranscript = () => {
       })
       .catch(err => {
         console.error(err);
-        setError("讀取資料失敗");
+        setError("Failed to load data");
       })
       .finally(() => setLoading(false));
   }, [selectedChunk]);
 
-  // --- 編輯功能 ---
+  // --- Edit Functions ---
 
-  // 👇👇👇 核心新增：通用更新函式 👇👇👇
-  // 這個函式可以一次更新 segment 的多個屬性
+  // Generic update function
   const updateSegmentFull = useCallback((index: number, updatedFields: Partial<TranscriptSegment>) => {
     setSegments(prev => {
       const newSegs = [...prev];
-      // 合併舊資料與新欄位
       newSegs[index] = { ...newSegs[index], ...updatedFields };
       return newSegs;
     });
     setHasUnsavedChanges(true);
   }, []);
-  // 👆👆👆 新增結束 👆👆👆
 
-  // 為了相容舊代碼，updateText 可以保留，或是內部呼叫 updateSegmentFull
+  // Stable function for resolving flags (Accept/Ignore)
+  // Using functional update (prev => ...) prevents dependency on 'segments', fixing lag.
+  const resolveFlag = useCallback((index: number, action: 'accept' | 'ignore') => {
+    setSegments(prev => {
+      const newSegs = [...prev];
+      const targetSegment = newSegs[index];
+      if (!targetSegment) return prev;
+
+      let newText = targetSegment.text;
+      
+      if (action === 'accept' && targetSegment.suggested_correction) {
+        newText = targetSegment.suggested_correction;
+      }
+
+      // Update object: set new text and clear review flags
+      newSegs[index] = {
+        ...targetSegment,
+        text: newText,
+        needs_review: false,
+        review_reason: null,
+        suggested_correction: null
+      };
+      return newSegs;
+    });
+    setHasUnsavedChanges(true);
+  }, []);
+
   const updateText = useCallback((index: number, newText: string) => {
     updateSegmentFull(index, { text: newText });
   }, [updateSegmentFull]);
@@ -126,13 +148,13 @@ export const useTranscript = () => {
           sentence_id: Date.now(),
           start: newStart,
           end: newStart + 2.0,
-          text: "新對話...",
+          text: "New segment...",
           speaker: currentSeg ? currentSeg.speaker : "SPEAKER_00",
           status: "new",
           verification_score: 1.0,
           needs_review: false,
           review_reason: null,
-          suggested_correction: null // 確保初始化新欄位
+          suggested_correction: null
       };
       newSegs.splice(index + 1, 0, newSegment);
       return newSegs;
@@ -168,7 +190,6 @@ export const useTranscript = () => {
     chunkTimepoints, fileType,
     loading, error, hasUnsavedChanges, existingTesters,
     
-    // 輸出所有操作函式
     updateText, 
     updateSegmentTime, 
     updateSpeaker, 
@@ -178,6 +199,7 @@ export const useTranscript = () => {
     addSegment, 
     uploadVideo, 
     fetchTesters,
-    updateSegmentFull 
+    updateSegmentFull,
+    resolveFlag // Exporting the stable resolve function
   };
 };

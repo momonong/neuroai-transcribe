@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { 
   Paper, IconButton, TextField, Typography, Box, 
   Tooltip, Button 
@@ -25,15 +25,14 @@ interface TranscriptItemProps {
   onResolveFlag: (index: number, action: 'accept' | 'ignore') => void;
 }
 
+// Helper: Format seconds to MM:SS.ss
 const formatTimestamp = (totalSeconds: number): string => {
   if (isNaN(totalSeconds) || totalSeconds < 0) return "00:00.00";
   
   const minutes = Math.floor(totalSeconds / 60);
   const seconds = Math.floor(totalSeconds % 60);
-  // 取小數點後兩位 (0.xx)
   const centiseconds = Math.round((totalSeconds % 1) * 100);
 
-  // 補零處理 (例如 9 -> 09)
   const mm = minutes.toString().padStart(2, '0');
   const ss = seconds.toString().padStart(2, '0');
   const cs = centiseconds.toString().padStart(2, '0');
@@ -41,7 +40,8 @@ const formatTimestamp = (totalSeconds: number): string => {
   return `${mm}:${ss}.${cs}`;
 };
 
-export const TranscriptItem: React.FC<TranscriptItemProps> = ({
+// Wrap component with React.memo to prevent unnecessary re-renders
+export const TranscriptItem = memo<TranscriptItemProps>(({
   index, segment, videoOffset, displaySpeaker, isDoctor,
   onTextChange, onSyncTime, onJumpToTime, onSpeakerClick, onDelete, onAddAfter,
   onResolveFlag
@@ -63,15 +63,15 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
         '&:hover': { boxShadow: 3 }
       }}
     >
-      {/* 左側控制區 */}
+      {/* Left Control Area */}
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, minWidth: '100px' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Tooltip title="跳轉播放">
+          <Tooltip title="Jump to time">
             <IconButton onClick={() => onJumpToTime(absStart)} color="primary" size="small">
               <PlayArrow />
             </IconButton>
           </Tooltip>
-          <Tooltip title="同步當前影片時間">
+          <Tooltip title="Sync timestamp">
             <IconButton onClick={() => onSyncTime(index)} size="small" sx={{ color: '#64748b' }}>
               <Sync fontSize="small" />
             </IconButton>
@@ -81,7 +81,7 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
         <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#64748b', mt: -0.5, fontWeight: 'bold' }}>
           {formatTimestamp(absStart)}
         </Typography>
-
+        
         <Box 
           onClick={(e) => onSpeakerClick(e, index)}
           sx={{ 
@@ -96,7 +96,7 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
         </Box>
       </Box>
 
-      {/* 中間編輯區 */}
+      {/* Middle Text Area */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <TextField
           fullWidth
@@ -115,7 +115,7 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
           }}
         />
 
-        {/* AI 建議修正區塊 */}
+        {/* AI Suggestion Block */}
         {segment.needs_review && segment.suggested_correction && (
           <Paper 
             variant="outlined" 
@@ -132,9 +132,9 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <AutoFixHigh sx={{ color: '#ea580c', fontSize: 20 }} />
               
-              <Tooltip title={segment.review_reason || "AI 偵測到可能的錯誤"} arrow placement="top">
+              <Tooltip title={segment.review_reason || "AI detected a potential issue"} arrow placement="top">
                 <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 600, cursor: 'help', borderBottom: '1px dotted #9a3412' }}>
-                  AI 建議：
+                  AI Suggestion:
                 </Typography>
               </Tooltip>
 
@@ -155,7 +155,7 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
                     '&:hover': { bgcolor: '#f1f5f9', borderColor: '#94a3b8' }
                   }}
                 >
-                  忽略
+                  Ignore
                 </Button>
 
                 <Button
@@ -169,21 +169,21 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
                     '&:hover': { bgcolor: '#ea580c' }
                   }}
                 >
-                  一鍵替換
+                  Accept
                 </Button>
             </Box>
           </Paper>
         )}
       </Box>
 
-      {/* 右側操作區 */}
+      {/* Right Action Area */}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
-        <Tooltip title="刪除此句">
+        <Tooltip title="Delete segment">
           <IconButton onClick={() => onDelete(index)} size="small" color="error">
             <Delete fontSize="small" />
           </IconButton>
         </Tooltip>
-        <Tooltip title="在此句後新增">
+        <Tooltip title="Add segment below">
           <IconButton onClick={() => onAddAfter(index)} size="small" color="primary">
             <Add fontSize="small" />
           </IconButton>
@@ -191,4 +191,4 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
       </Box>
     </Paper>
   );
-};
+});

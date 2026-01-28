@@ -37,7 +37,7 @@ function App() {
     hasUnsavedChanges, loading, error,
     updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
     deleteSegment, addSegment, uploadVideo, existingTesters, fetchTesters,
-    updateSegmentFull // ★ 記得我們在 useTranscript 新增了這個
+    resolveFlag // ★ 1. 從 hook 引入穩定的函式 (解決卡頓的關鍵)
   } = useTranscript();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -128,28 +128,9 @@ function App() {
     }
   };
 
-  // ★★★ 核心新增：處理「一鍵替換」與「忽略」 ★★★
-  const handleResolveFlag = (index: number, action: 'accept' | 'ignore') => {
-    const targetSegment = segments[index];
-    if (!targetSegment) return;
-
-    let newText = targetSegment.text;
-    
-    // 如果是「接受」，就把文字換成建議的文字
-    if (action === 'accept' && targetSegment.suggested_correction) {
-      newText = targetSegment.suggested_correction;
-    }
-
-    // 更新物件：無論接受或忽略，都要把 needs_review 設為 false
-    const updatedSegment = {
-        text: newText,
-        needs_review: false,           // 移除標記
-        review_reason: null,           // 清空原因
-        suggested_correction: null     // 清空建議
-    };
-
-    updateSegmentFull(index, updatedSegment); 
-  };
+  // ★ 2. 這裡原本的 handleResolveFlag 已經刪除了！
+  // 因為寫在這裡會導致每次 render 都產生新函式 -> 導致子元件全體重繪 -> 導致卡頓。
+  // 我們改用從 hook 傳入的 resolveFlag。
 
   const handleSaveWrapper = async () => {
       try {
@@ -431,7 +412,7 @@ function App() {
                         onSpeakerClick={handleSpeakerClick}
                         onDelete={deleteSegment}
                         onAddAfter={addSegment}
-                        onResolveFlag={handleResolveFlag} // ★ 傳入新函式
+                        onResolveFlag={resolveFlag} // ★ 3. 傳入 Hook 提供的穩定函式
                     />
                 ))}
               </Box>
