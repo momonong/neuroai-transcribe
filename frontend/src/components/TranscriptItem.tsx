@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import { 
   PlayArrow, Sync, Person, Delete, Add, 
-  Warning, AutoFixHigh, Check 
+  AutoFixHigh, Check, Close // 引入 Close Icon
 } from '@mui/icons-material';
 
 import type { TranscriptSegment } from '../types';
@@ -22,22 +22,16 @@ interface TranscriptItemProps {
   onSpeakerClick: (event: React.MouseEvent<HTMLElement>, index: number) => void;
   onDelete: (index: number) => void;
   onAddAfter: (index: number) => void;
+  onResolveFlag: (index: number, action: 'accept' | 'ignore') => void;
 }
 
 export const TranscriptItem: React.FC<TranscriptItemProps> = ({
   index, segment, videoOffset, displaySpeaker, isDoctor,
-  onTextChange, onSyncTime, onJumpToTime, onSpeakerClick, onDelete, onAddAfter
+  onTextChange, onSyncTime, onJumpToTime, onSpeakerClick, onDelete, onAddAfter,
+  onResolveFlag // 接收新函式
 }) => {
   
-  // 計算絕對時間 (用於顯示)
   const absStart = segment.start + videoOffset;
-
-  // 處理接受建議的函式
-  const handleAcceptSuggestion = () => {
-    if (segment.suggested_correction) {
-      onTextChange(index, segment.suggested_correction);
-    }
-  };
 
   return (
     <Paper 
@@ -47,44 +41,35 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
         mb: 2, 
         display: 'flex', 
         gap: 2,
-        bgcolor: segment.needs_review ? '#fffbeb' : 'white', // 警告色背景
+        // 只有當 needs_review 為 true 時才變色
+        bgcolor: segment.needs_review ? '#fffbeb' : 'white', 
         border: segment.needs_review ? '1px solid #fcd34d' : '1px solid transparent',
         transition: 'all 0.2s',
         '&:hover': { boxShadow: 3 }
       }}
     >
-      {/* === 左側控制區 (播放、同步、時間、說話者) === */}
+      {/* 左側控制區 (保持不變) */}
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, minWidth: '100px' }}>
-        
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <Tooltip title="跳轉播放">
             <IconButton onClick={() => onJumpToTime(absStart)} color="primary" size="small">
               <PlayArrow />
             </IconButton>
           </Tooltip>
-          
-          <Tooltip title="同步當前影片時間 (將此句設為目前播放進度)">
+          <Tooltip title="同步當前影片時間">
             <IconButton onClick={() => onSyncTime(index)} size="small" sx={{ color: '#64748b' }}>
               <Sync fontSize="small" />
             </IconButton>
           </Tooltip>
         </Box>
-        
         <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#64748b', mt: -0.5 }}>
           {absStart.toFixed(1)}s
         </Typography>
-        
         <Box 
           onClick={(e) => onSpeakerClick(e, index)}
           sx={{ 
-            cursor: 'pointer', 
-            display: 'flex', 
-            flexDirection: 'column', 
-            alignItems: 'center',
-            p: 0.5,
-            borderRadius: 1,
-            '&:hover': { bgcolor: '#f1f5f9' },
-            mt: 0.5
+            cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center',
+            p: 0.5, borderRadius: 1, '&:hover': { bgcolor: '#f1f5f9' }, mt: 0.5
           }}
         >
           <Person fontSize="small" sx={{ color: isDoctor ? '#0ea5e9' : '#f59e0b' }} />
@@ -94,7 +79,7 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
         </Box>
       </Box>
 
-      {/* === 中間編輯區 === */}
+      {/* 中間編輯區 */}
       <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 1 }}>
         <TextField
           fullWidth
@@ -113,12 +98,11 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
           }}
         />
 
-        {/* AI 建議修正區塊 */}
         {segment.needs_review && segment.suggested_correction && (
           <Paper 
             variant="outlined" 
             sx={{ 
-              p: 1.5, 
+              p: 1, px: 2, 
               bgcolor: '#fff', 
               borderColor: '#fdba74', 
               display: 'flex', 
@@ -129,44 +113,55 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
           >
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <AutoFixHigh sx={{ color: '#ea580c', fontSize: 20 }} />
-              <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 600 }}>
-                AI 建議：
-              </Typography>
+              
+              {/* 把原因藏在 Tooltip 裡，介面更乾淨 */}
+              <Tooltip title={segment.review_reason || "AI 偵測到可能的錯誤"} arrow placement="top">
+                <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 600, cursor: 'help', borderBottom: '1px dotted #9a3412' }}>
+                  AI 建議：
+                </Typography>
+              </Tooltip>
+
               <Typography variant="body2" sx={{ color: '#1e293b' }}>
                 {segment.suggested_correction}
               </Typography>
             </Box>
             
-            <Button
-              size="small"
-              variant="contained"
-              color="warning"
-              startIcon={<Check />}
-              onClick={handleAcceptSuggestion}
-              sx={{ 
-                textTransform: 'none', 
-                boxShadow: 'none',
-                bgcolor: '#f97316',
-                '&:hover': { bgcolor: '#ea580c' }
-              }}
-            >
-              一鍵替換
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+                {/* 忽略按鈕 (保留原始文字，移除標記) */}
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="inherit"
+                  startIcon={<Close />}
+                  onClick={() => onResolveFlag(index, 'ignore')}
+                  sx={{ 
+                    textTransform: 'none', color: '#64748b', borderColor: '#cbd5e1',
+                    '&:hover': { bgcolor: '#f1f5f9', borderColor: '#94a3b8' }
+                  }}
+                >
+                  忽略
+                </Button>
+
+                {/* 接受按鈕 (替換文字，移除標記) */}
+                <Button
+                  size="small"
+                  variant="contained"
+                  color="warning"
+                  startIcon={<Check />}
+                  onClick={() => onResolveFlag(index, 'accept')}
+                  sx={{ 
+                    textTransform: 'none', boxShadow: 'none', bgcolor: '#f97316',
+                    '&:hover': { bgcolor: '#ea580c' }
+                  }}
+                >
+                  一鍵替換
+                </Button>
+            </Box>
           </Paper>
-        )}
-        
-        {/* 顯示標記原因 */}
-        {segment.needs_review && !segment.suggested_correction && (
-           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
-             <Warning sx={{ fontSize: 16, color: '#f59e0b' }} />
-             <Typography variant="caption" sx={{ color: '#b45309' }}>
-               {segment.review_reason || "需人工檢查"}
-             </Typography>
-           </Box>
         )}
       </Box>
 
-      {/* === 右側操作區 (只剩刪除與新增) === */}
+      {/* 右側操作區 */}
       <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
         <Tooltip title="刪除此句">
           <IconButton onClick={() => onDelete(index)} size="small" color="error">
@@ -178,8 +173,6 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
             <Add fontSize="small" />
           </IconButton>
         </Tooltip>
-        
-        {/* ❌ 這裡原本的 Sync 按鈕已經移到左邊了 */}
       </Box>
     </Paper>
   );

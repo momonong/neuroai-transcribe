@@ -16,7 +16,7 @@ export const useTranscript = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [existingTesters, setExistingTesters] = useState<string[]>([]); // ★ 案例清單
+  const [existingTesters, setExistingTesters] = useState<string[]>([]); 
 
   // 1. 載入列表
   const fetchChunks = useCallback(() => {
@@ -32,9 +32,9 @@ export const useTranscript = () => {
       .catch(err => console.error(err));
   }, [selectedChunk]);
 
-  // ★ 新增：取得案例名單
+  // 取得案例名單
   const fetchTesters = useCallback(() => {
-      axios.get(`${API_BASE}/testers`)
+      axios.get(`${API_BASE}/cases`) // 注意：API 名稱通常是 cases，如果是 testers 請自行調整
         .then(res => setExistingTesters(res.data))
         .catch(console.error);
   }, []);
@@ -76,66 +76,66 @@ export const useTranscript = () => {
 
   // --- 編輯功能 ---
 
-  const updateText = useCallback((id: number, newText: string) => {
-    setSegments(prev => prev.map(seg => 
-      seg.sentence_id === id ? { ...seg, text: newText } : seg
-    ));
+  // 👇👇👇 核心新增：通用更新函式 👇👇👇
+  // 這個函式可以一次更新 segment 的多個屬性
+  const updateSegmentFull = useCallback((index: number, updatedFields: Partial<TranscriptSegment>) => {
+    setSegments(prev => {
+      const newSegs = [...prev];
+      // 合併舊資料與新欄位
+      newSegs[index] = { ...newSegs[index], ...updatedFields };
+      return newSegs;
+    });
     setHasUnsavedChanges(true);
   }, []);
+  // 👆👆👆 新增結束 👆👆👆
+
+  // 為了相容舊代碼，updateText 可以保留，或是內部呼叫 updateSegmentFull
+  const updateText = useCallback((index: number, newText: string) => {
+    updateSegmentFull(index, { text: newText });
+  }, [updateSegmentFull]);
 
   const updateSegmentTime = useCallback((index: number, newRelativeStart: number) => {
-    setSegments(prev => {
-        const newSegments = [...prev];
-        newSegments[index] = { ...newSegments[index], start: newRelativeStart };
-        return newSegments;
-    });
-    setHasUnsavedChanges(true);
-  }, []);
+    updateSegmentFull(index, { start: newRelativeStart });
+  }, [updateSegmentFull]);
 
   const updateSpeaker = useCallback((index: number, newSpeakerId: string) => {
-    setSegments(prev => {
-        const copy = [...prev];
-        copy[index] = { ...copy[index], speaker: newSpeakerId };
-        return copy;
-    });
-    setHasUnsavedChanges(true);
-  }, []);
+    updateSegmentFull(index, { speaker: newSpeakerId });
+  }, [updateSegmentFull]);
 
   const renameSpeaker = useCallback((originalId: string, newName: string) => {
     setSpeakerMap(prev => ({ ...prev, [originalId]: newName }));
     setHasUnsavedChanges(true);
   }, []);
 
-  // ★★★ 新增：刪除功能 ★★★
   const deleteSegment = useCallback((index: number) => {
     setSegments(prev => {
-        const newSegs = [...prev];
-        newSegs.splice(index, 1);
-        return newSegs;
+      const newSegs = [...prev];
+      newSegs.splice(index, 1);
+      return newSegs;
     });
     setHasUnsavedChanges(true);
   }, []);
 
-  // ★★★ 新增：插入功能 ★★★
   const addSegment = useCallback((index: number) => {
     setSegments(prev => {
-        const newSegs = [...prev];
-        const currentSeg = newSegs[index];
-        const newStart = currentSeg ? currentSeg.end : 0;
-        
-        const newSegment: TranscriptSegment = {
-            sentence_id: Date.now(),
-            start: newStart,
-            end: newStart + 2.0,
-            text: "新對話...",
-            speaker: currentSeg ? currentSeg.speaker : "SPEAKER_00",
-            status: "new",
-            verification_score: 1.0,
-            needs_review: false,
-            review_reason: null
-        };
-        newSegs.splice(index + 1, 0, newSegment);
-        return newSegs;
+      const newSegs = [...prev];
+      const currentSeg = newSegs[index];
+      const newStart = currentSeg ? currentSeg.end : 0;
+      
+      const newSegment: TranscriptSegment = {
+          sentence_id: Date.now(),
+          start: newStart,
+          end: newStart + 2.0,
+          text: "新對話...",
+          speaker: currentSeg ? currentSeg.speaker : "SPEAKER_00",
+          status: "new",
+          verification_score: 1.0,
+          needs_review: false,
+          review_reason: null,
+          suggested_correction: null // 確保初始化新欄位
+      };
+      newSegs.splice(index + 1, 0, newSegment);
+      return newSegs;
     });
     setHasUnsavedChanges(true);
   }, []);
@@ -150,7 +150,6 @@ export const useTranscript = () => {
     setHasUnsavedChanges(false);
   };
 
-  // ★★★ 新增：上傳功能 ★★★
   const uploadVideo = async (file: File, caseName: string) => {
       const formData = new FormData();
       formData.append('file', file);
@@ -167,8 +166,18 @@ export const useTranscript = () => {
     chunks, selectedChunk, setSelectedChunk,
     segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
     chunkTimepoints, fileType,
-    loading, error, hasUnsavedChanges, existingTesters, // ★ 記得匯出 existingTesters (現在是案例清單)
-    updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
-    deleteSegment, addSegment, uploadVideo, fetchTesters // ★ 記得匯出這些 function
+    loading, error, hasUnsavedChanges, existingTesters,
+    
+    // 輸出所有操作函式
+    updateText, 
+    updateSegmentTime, 
+    updateSpeaker, 
+    renameSpeaker, 
+    save,
+    deleteSegment, 
+    addSegment, 
+    uploadVideo, 
+    fetchTesters,
+    updateSegmentFull 
   };
 };

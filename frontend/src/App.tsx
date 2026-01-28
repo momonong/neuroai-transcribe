@@ -36,7 +36,8 @@ function App() {
     chunkTimepoints, fileType,
     hasUnsavedChanges, loading, error,
     updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
-    deleteSegment, addSegment, uploadVideo, existingTesters, fetchTesters
+    deleteSegment, addSegment, uploadVideo, existingTesters, fetchTesters,
+    updateSegmentFull // ★ 記得我們在 useTranscript 新增了這個
   } = useTranscript();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -44,7 +45,7 @@ function App() {
   const [toast, setToast] = useState({ open: false, msg: '', type: 'info' as any });
 
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
-  const [caseChunks, setCaseChunks] = useState<string[]>([]); // 專門存該 Case 的 chunks
+  const [caseChunks, setCaseChunks] = useState<string[]>([]); 
   
   // UI State
   const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
@@ -78,7 +79,7 @@ function App() {
       fetchVideos();
   }, []);
 
-  // 2. 影片變更 -> 鎖定 Case -> 重新撈取該 Case 的 Chunks (透過 API 篩選)
+  // 2. 影片變更 -> 鎖定 Case -> 重新撈取該 Case 的 Chunks
   useEffect(() => {
       if (mediaFileName) {
           const parts = mediaFileName.split('/');
@@ -127,27 +128,41 @@ function App() {
     }
   };
 
+  // ★★★ 核心新增：處理「一鍵替換」與「忽略」 ★★★
+  const handleResolveFlag = (index: number, action: 'accept' | 'ignore') => {
+    const targetSegment = segments[index];
+    if (!targetSegment) return;
+
+    let newText = targetSegment.text;
+    
+    // 如果是「接受」，就把文字換成建議的文字
+    if (action === 'accept' && targetSegment.suggested_correction) {
+      newText = targetSegment.suggested_correction;
+    }
+
+    // 更新物件：無論接受或忽略，都要把 needs_review 設為 false
+    const updatedSegment = {
+        text: newText,
+        needs_review: false,           // 移除標記
+        review_reason: null,           // 清空原因
+        suggested_correction: null     // 清空建議
+    };
+
+    updateSegmentFull(index, updatedSegment); 
+  };
+
   const handleSaveWrapper = async () => {
       try {
-          // 執行存檔
           await save();
-          
           setToast({ open: true, msg: '儲存成功！', type: 'success' });
 
-          // === 關鍵修正：存檔後的自動更新邏輯 ===
+          // 存檔後自動更新邏輯
           if (selectedCase && selectedChunk) {
-              // 1. 重新抓取該 Case 的 Chunk 列表
-              // 因為後端現在有 "Winner Takes All" 機制，
-              // 存檔產生 _edited.json 後，列表內容會改變 (flagged 會被 edited 取代)
               const res = await axios.get(`/api/temp/chunks?case=${selectedCase}`);
               const newFiles = res.data.files;
               setCaseChunks(newFiles);
 
-              // 2. 自動切換到新的檔案 (如果檔名變了)
-              // 例如從 "...flagged.json" 變成 "...edited.json"
-              // 我們透過比對 "chunk 編號" 來找到對應的新檔案
-              const currentChunkId = selectedChunk.split('/').pop()?.split('_').slice(0, 2).join('_'); // 取得 "chunk_1"
-              
+              const currentChunkId = selectedChunk.split('/').pop()?.split('_').slice(0, 2).join('_');
               const newMatchingFile = newFiles.find((f: string) => f.includes(currentChunkId || ""));
               
               if (newMatchingFile && newMatchingFile !== selectedChunk) {
@@ -219,7 +234,7 @@ function App() {
                   display: 'flex', 
                   justifyContent: 'center', 
                   alignItems: 'center', 
-                  minHeight: '300px', // 稍微加高一點
+                  minHeight: '300px', 
                   flexShrink: 0,
                   borderBottom: '1px solid #334155',
                   position: 'relative'
@@ -272,7 +287,7 @@ function App() {
                   </Grid>
               </Box>
 
-              {/* C. 檔案列表區 (只顯示篩選過的 Chunks) */}
+              {/* C. 檔案列表區 */}
               <Box sx={{ flex: 1, overflowY: 'auto', p: 2, bgcolor: '#0f172a' }}>
                   
                   <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -280,7 +295,6 @@ function App() {
                           <FolderOpen fontSize="small"/> 
                           {selectedCase ? '段落列表 (Chunks)' : '請先選擇影片'}
                       </Typography>
-                      {/* 當點擊重新整理時，手動重發 API */}
                       <IconButton size="small" onClick={() => { if(selectedCase) axios.get(`/api/temp/chunks?case=${selectedCase}`).then(res => setCaseChunks(res.data.files)); }}><Refresh fontSize="small" sx={{color:'#64748b'}}/></IconButton>
                   </Box>
 
@@ -299,9 +313,7 @@ function App() {
                           let timeRange = "";
                           let chunkIndex = "";
 
-                          // 解析檔名來顯示漂亮的資訊
                           if (parts.length >= 4) {
-                              // 數字轉換 (1 -> 第一段)
                               const idx = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
                               const num = parseInt(parts[1]);
                               const numStr = num <= 10 ? idx[num] : num;
@@ -347,7 +359,6 @@ function App() {
                                                       {displayName}
                                                   </Typography>
                                                   
-                                                  {/* 狀態標籤 (顯示為何選中這個檔案) */}
                                                   {isFlagged && <Chip label="需人工審核" size="small" color="warning" sx={{height:20, fontSize:'0.7rem'}} icon={<Warning style={{fontSize:12}}/>} />}
                                                   {isEdited && <Chip label="已編輯" size="small" color="success" sx={{height:20, fontSize:'0.7rem'}} icon={<CheckCircle style={{fontSize:12}}/>} />}
                                                   {isOriginal && <Chip label="原始檔" size="small" sx={{height:20, fontSize:'0.7rem', bgcolor:'transparent', border:'1px solid #64748b', color:'#94a3b8'}} />}
@@ -420,6 +431,7 @@ function App() {
                         onSpeakerClick={handleSpeakerClick}
                         onDelete={deleteSegment}
                         onAddAfter={addSegment}
+                        onResolveFlag={handleResolveFlag} // ★ 傳入新函式
                     />
                 ))}
               </Box>
