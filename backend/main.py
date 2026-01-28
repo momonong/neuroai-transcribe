@@ -44,6 +44,7 @@ app.add_middleware(
 )
 
 # 掛載靜態檔案 (前端播放影片用)
+# http://localhost:8001/static/CaseName/video.mp4
 app.mount("/static", StaticFiles(directory=DATA_DIR), name="static")
 
 
@@ -61,6 +62,7 @@ class TranscriptSegment(BaseModel):
     status: str = "reviewed"
     needs_review: bool = False
     review_reason: Optional[str] = None
+    suggested_correction: Optional[str] = None # 確保後端接收前端傳回的資料結構完整
 
 class SavePayload(BaseModel):
     filename: str  # 相對路徑 (CaseName/chunk_x.json)
@@ -85,38 +87,66 @@ def get_real_path(relative_path: str):
 def get_videos():
     """
     掃描所有影片，供前端下拉選單使用
-    修正：掃描 data/CaseName/Video.mp4
+    修正：同時支援 data/CaseName/Video.mp4 (舊) 與 data/CaseName/source/Video.mp4 (新)
     """
     video_files = []
     # 支援常見音視訊格式
-    extensions = [".mp4", ".MP4"]
+    extensions = [".mp4", ".MP4", ".mov", ".MOV", ".avi", ".AVI"]
     
     if not os.path.exists(DATA_DIR):
         return video_files
     
+    # 排除的系統資料夾
+    IGNORE_DIRS = {"temp_chunks", "db", "text", "__pycache__", "output"}
+
     # 1. 掃描 data 資料夾底下的每一層 (Case資料夾)
-    # 使用 os.scandir 效能較好
     with os.scandir(DATA_DIR) as it:
         for entry in it:
-            if entry.is_dir() and entry.name not in ["temp_chunks", "db", "text", "__pycache__"]:
+            if entry.is_dir() and entry.name not in IGNORE_DIRS:
                 case_name = entry.name
                 case_path = entry.path
                 
-                # 2. 在該 Case 資料夾內找影片
-                for f in os.listdir(case_path):
-                    if any(f.endswith(ext) for ext in extensions):
-                        # 排除掉 chunk_ 開頭的音檔，我們只列出主影片
-                        if f.startswith("chunk_"):
-                            continue
+                # === 核心修改：定義搜尋路徑 (優先找 source，也找根目錄) ===
+                search_targets = []
+                
+                # 1. 新架構: data/Case/source
+                source_dir = os.path.join(case_path, "source")
+                if os.path.exists(source_dir):
+                    search_targets.append(source_dir)
+                
+                # 2. 舊架構: data/Case
+                search_targets.append(case_path)
+
+                # 用來避免重複 (如果同一個檔案被掃到兩次)
+                seen_files = set()
+
+                for target_dir in search_targets:
+                    if not os.path.exists(target_dir): continue
+
+                    for f in os.listdir(target_dir):
+                        if any(f.endswith(ext) for ext in extensions):
+                            # 排除掉 chunk_ 開頭的音檔
+                            if f.startswith("chunk_"):
+                                continue
                             
-                        # 組合相對路徑
-                        rel_path = f"{case_name}/{f}"
-                        display_name = f"{case_name}"
-                        
-                        video_files.append({
-                            "path": rel_path,
-                            "name": display_name
-                        })
+                            if f in seen_files:
+                                continue
+                            seen_files.add(f)
+                            
+                            # 取得絕對路徑
+                            full_path = os.path.join(target_dir, f)
+                            
+                            # 計算相對路徑 (給前端 /static/ 使用)
+                            # 如果在 source 裡，rel_path 會變成 "CaseName/source/video.mp4"
+                            # 如果在根目錄，rel_path 會變成 "CaseName/video.mp4"
+                            rel_path = os.path.relpath(full_path, DATA_DIR).replace("\\", "/")
+                            
+                            display_name = f"{case_name}"
+                            
+                            video_files.append({
+                                "path": rel_path,
+                                "name": display_name
+                            })
 
     # 依名稱排序
     video_files.sort(key=lambda x: x['name'], reverse=True)
@@ -137,84 +167,10 @@ def get_cases():
     with os.scandir(DATA_DIR) as it:
         for entry in it:
             if entry.is_dir() and entry.name not in IGNORE_DIRS:
-                # 只要不是系統資料夾，我們就當作是案例資料夾回傳
-                # 不做過度檢查，以免因為檔案格式問題導致資料夾消失
                 cases.append(entry.name)
     
     cases.sort(reverse=True)
     return cases
-
-@app.get("/api/temp/chunks")
-def list_chunks(case: Optional[str] = None):
-    """
-    列出 JSON 檔案 (智慧篩選版)。
-    邏輯：針對每個 Chunk ID，只回傳「最高優先級」的單一檔案。
-    """
-    json_files = []
-    
-    if case:
-        search_path = os.path.join(DATA_DIR, case, "chunk_*.json")
-    else:
-        # 如果沒選 Case，通常不回傳，或回傳全部 (視需求)
-        return {"files": []}
-    
-    # 1. 檔案分組：以 Chunk ID 為 Key
-    # 結構: { 1: {'flagged': path, 'aligned': path}, 2: {...} }
-    chunk_groups = {}
-    
-    for f in glob.glob(search_path):
-        filename = os.path.basename(f)
-        
-        # 絕對排除的名單
-        if "whisper" in filename or "diar" in filename:
-            continue
-            
-        # 解析 Chunk ID
-        # 檔名範例: chunk_3_1100278_1606067_flagged_for_human.json
-        try:
-            parts = filename.split('_')
-            # parts[0]="chunk", parts[1]="3" (index)
-            chunk_idx = int(parts[1])
-        except:
-            continue # 檔名格式不對就跳過
-            
-        if chunk_idx not in chunk_groups:
-            chunk_groups[chunk_idx] = {}
-            
-        # 依據後綴分類
-        if "flagged_for_human" in filename:
-            chunk_groups[chunk_idx]["flagged"] = f
-        elif "edited" in filename:
-            chunk_groups[chunk_idx]["edited"] = f
-        elif "verified_dataset" in filename:
-            chunk_groups[chunk_idx]["verified"] = f
-        elif "aligned" in filename:
-            chunk_groups[chunk_idx]["aligned"] = f
-            
-    # 2. 挑選每個 Chunk 的最佳檔案 (Winner Takes All)
-    # 我們將 keys 排序 (1, 2, 3, 4...) 確保列表順序
-    sorted_indices = sorted(chunk_groups.keys())
-    
-    for idx in sorted_indices:
-        variants = chunk_groups[idx]
-        best_file = None
-        
-        # 優先順序判定
-        if "flagged" in variants:
-            best_file = variants["flagged"]
-        elif "edited" in variants:
-            best_file = variants["edited"]
-        elif "verified" in variants:
-            best_file = variants["verified"]
-        elif "aligned" in variants:
-            best_file = variants["aligned"]
-            
-        if best_file:
-            # 轉相對路徑回傳
-            rel_path = os.path.relpath(best_file, DATA_DIR)
-            json_files.append(rel_path.replace("\\", "/"))
-            
-    return {"files": json_files}
 
 @app.get("/api/temp/chunks")
 def list_chunks(case: Optional[str] = None):
@@ -226,14 +182,29 @@ def list_chunks(case: Optional[str] = None):
     json_files = []
     
     if case:
-        search_path = os.path.join(DATA_DIR, case, "chunk_*.json")
+        search_path = os.path.join(DATA_DIR, case, "**", "chunk_*.json") # 使用 recursive glob 比較保險，但目前結構應該只有一層
+        # 修正：目前的 intermediate 都在 data/Case/intermediate，所以我們要找那裡
+        # 或是之前的邏輯是 data/Case/chunk_*.json (舊結構)
+        # 讓我們同時支援兩者
+        
+        # 策略：先掃 data/Case/intermediate (新結構)
+        inter_path = os.path.join(DATA_DIR, case, "intermediate", "chunk_*.json")
+        files_inter = glob.glob(inter_path)
+        
+        # 再掃 data/Case (舊結構，如果有)
+        root_path = os.path.join(DATA_DIR, case, "chunk_*.json")
+        files_root = glob.glob(root_path)
+        
+        all_files = files_inter + files_root
     else:
-        search_path = os.path.join(DATA_DIR, "*", "chunk_*.json")
+        # 搜尋全部 (開發用)
+        all_files = glob.glob(os.path.join(DATA_DIR, "*", "intermediate", "chunk_*.json")) + \
+                    glob.glob(os.path.join(DATA_DIR, "*", "chunk_*.json"))
     
     # 1. 收集所有 chunk 檔案，並分組
     chunk_groups = {}
     
-    for f in glob.glob(search_path):
+    for f in all_files:
         filename = os.path.basename(f)
         
         # 排除非目標檔案
@@ -244,7 +215,15 @@ def list_chunks(case: Optional[str] = None):
         parts = filename.split('_')
         if len(parts) < 2: continue
         
-        case_name = os.path.basename(os.path.dirname(f))
+        # 取得 Case Name (稍微複雜因為有 intermediate 層)
+        # f = .../data/CaseName/intermediate/chunk... -> dirname -> dirname -> basename
+        # f = .../data/CaseName/chunk... -> dirname -> basename
+        parent_dir = os.path.dirname(f)
+        if os.path.basename(parent_dir) == "intermediate":
+             case_name = os.path.basename(os.path.dirname(parent_dir))
+        else:
+             case_name = os.path.basename(parent_dir)
+
         chunk_id = f"{parts[0]}_{parts[1]}" # chunk_1
         unique_key = f"{case_name}/{chunk_id}"
         
@@ -258,6 +237,8 @@ def list_chunks(case: Optional[str] = None):
             chunk_groups[unique_key]["edited"] = f
         elif "verified_dataset" in filename:
             chunk_groups[unique_key]["verified"] = f
+        elif "stitched" in filename: # 新增：支援我們剛剛做出來的 stitched 檔案
+            chunk_groups[unique_key]["stitched"] = f
         elif "aligned" in filename:
             chunk_groups[unique_key]["aligned"] = f
             
@@ -265,16 +246,17 @@ def list_chunks(case: Optional[str] = None):
     for key, variants in chunk_groups.items():
         best_file = None
         
-        # 🔥 修正重點：優先順序調整 🔥
-        # 只要有 "已編輯 (edited)" 版本，代表人工已經處理過，絕對優先顯示！
+        # 🔥 優先順序調整 🔥
         if "edited" in variants:
-            best_file = variants["edited"]      # 🥇 第一順位: 已編輯
+            best_file = variants["edited"]      # 🥇 1. 已編輯
         elif "flagged" in variants:
-            best_file = variants["flagged"]     # 🥈 第二順位: 需審核
+            best_file = variants["flagged"]     # 🥈 2. 需審核 (AI 標記)
+        elif "stitched" in variants:
+             best_file = variants["stitched"]   # 🥉 3. 已修復 (AI Stitching 結果) <--- 新增
         elif "verified" in variants:
-            best_file = variants["verified"]    # 🥉 第三順位: 已驗證資料集
+            best_file = variants["verified"]    # 4. 舊版驗證
         elif "aligned" in variants:
-            best_file = variants["aligned"]     # 🏅 第四順位: 原始檔
+            best_file = variants["aligned"]     # 5. 原始檔
             
         if best_file:
             rel_path = os.path.relpath(best_file, DATA_DIR)
@@ -287,7 +269,7 @@ def list_chunks(case: Optional[str] = None):
             parts = filename.split('_')
             return int(parts[1]) 
         except:
-            return path
+            return 0
 
     json_files.sort(key=sort_key)
     return {"files": json_files}
@@ -296,8 +278,6 @@ def list_chunks(case: Optional[str] = None):
 def get_chunk(filename: str):
     """
     讀取專案資料 (智慧優先級版)。
-    邏輯：不管傳入什麼檔名，一律優先尋找並回傳 '已編輯 (_edited)' 版本。
-    優先級: Edited > Flagged > Verified > Aligned
     """
     try:
         # 1. 取得絕對路徑
@@ -306,14 +286,14 @@ def get_chunk(filename: str):
         request_fname = os.path.basename(request_path)
         
         # 2. 還原「核心檔名」 (移除所有可能的後綴)
-        # 例如: chunk_1_0_531989_flagged_for_human.json -> chunk_1_0_531989
         core_name = request_fname.replace("_flagged_for_human.json", "")\
                                  .replace("_edited.json", "")\
                                  .replace("_verified_dataset.json", "")\
+                                 .replace("_stitched.json", "")\
                                  .replace("_aligned.json", "")\
                                  .replace(".json", "")
         
-        # 移除可能殘留的後綴 (針對 whisper/diar 這種非標準結尾)
+        # 移除可能殘留的後綴
         for suffix in ["_whisper", "_aligned", "_diar"]:
             if core_name.endswith(suffix):
                 core_name = core_name.replace(suffix, "")
@@ -321,10 +301,11 @@ def get_chunk(filename: str):
         # 3. 定義各版本的候選路徑
         candidate_edited = os.path.join(directory, f"{core_name}_edited.json")
         candidate_flagged = os.path.join(directory, f"{core_name}_flagged_for_human.json")
+        candidate_stitched = os.path.join(directory, f"{core_name}_stitched.json") # 新增
         candidate_verified = os.path.join(directory, f"{core_name}_verified_dataset.json")
         candidate_aligned = os.path.join(directory, f"{core_name}_aligned.json")
         
-        # 4. 依照優先權決定最終要讀取哪個檔案 (Winner Takes All)
+        # 4. 依照優先權決定最終要讀取哪個檔案
         target_path = None
         
         if os.path.exists(candidate_edited):
@@ -333,12 +314,14 @@ def get_chunk(filename: str):
         elif os.path.exists(candidate_flagged):
             target_path = candidate_flagged
             print(f"📖 Priority Load: Flagged ({os.path.basename(target_path)})")
+        elif os.path.exists(candidate_stitched):
+            target_path = candidate_stitched
+            print(f"📖 Priority Load: Stitched ({os.path.basename(target_path)})")
         elif os.path.exists(candidate_verified):
             target_path = candidate_verified
         elif os.path.exists(candidate_aligned):
             target_path = candidate_aligned
         else:
-            # 如果都找不到，就嘗試讀取原本請求的檔案 (Fallback)
             target_path = request_path
             print(f"📖 Fallback Load: {os.path.basename(target_path)}")
 
@@ -350,28 +333,36 @@ def get_chunk(filename: str):
             data = json.load(f)
 
         # ========================================================
-        # 6. 媒體配對邏輯 (Media Discovery) - 維持不變 (找 MP4 優先)
+        # 6. 媒體配對邏輯 (Media Discovery) - 改良版
         # ========================================================
-        folder_path = os.path.dirname(filename)      # 相對路徑
-        real_folder = os.path.dirname(target_path)   # 絕對路徑
-        target_media = None
+        # directory 指向的是 intermediate，我們需要往上找 source 或根目錄
+        # 結構 A: data/Case/intermediate/chunk.json -> 影片在 data/Case/source/
+        # 結構 B: data/Case/chunk.json -> 影片在 data/Case/
         
-        # 策略 A: 找主影片 (.mp4)
-        if os.path.exists(real_folder):
-            files = os.listdir(real_folder)
-            mp4_files = [f for f in files if f.lower().endswith('.mp4')]
+        case_root = os.path.dirname(directory) # 假設 directory 是 intermediate，上一層是 Case
+        if os.path.basename(directory) != "intermediate":
+             case_root = directory # 如果 json 本來就在根目錄
+             
+        # 搜尋候選影片目錄
+        media_search_dirs = [
+            os.path.join(case_root, "source"), # 優先找 source
+            case_root # 次要找根目錄
+        ]
+        
+        target_media = None
+        media_folder_found = None
+        
+        for search_dir in media_search_dirs:
+            if not os.path.exists(search_dir): continue
+            
+            files = os.listdir(search_dir)
+            mp4_files = [f for f in files if f.lower().endswith(('.mp4', '.mov', '.avi'))]
+            
             if mp4_files:
                 mp4_files.sort(key=len) 
                 target_media = mp4_files[0]
-        
-        # 策略 B: 找對應音檔 (.wav)
-        if not target_media:
-            # 嘗試找 chunk wav
-            for ext in [".wav", ".mp3", ".m4a"]:
-                candidate = f"{core_name}{ext}"
-                if os.path.exists(os.path.join(real_folder, candidate)):
-                    target_media = candidate
-                    break
+                media_folder_found = search_dir
+                break # 找到就跳出
         
         # 7. 組裝回傳資料
         processed_data = data if isinstance(data, dict) else {
@@ -380,9 +371,12 @@ def get_chunk(filename: str):
             "file_type": "original"
         }
         
-        if target_media:
-            media_rel_path = f"{folder_path}/{target_media}"
-            processed_data['media_file'] = media_rel_path.replace("\\", "/")
+        if target_media and media_folder_found:
+            # 計算相對於 DATA_DIR 的路徑給前端
+            # 例如: Case/source/video.mp4
+            full_media_path = os.path.join(media_folder_found, target_media)
+            media_rel_path = os.path.relpath(full_media_path, DATA_DIR).replace("\\", "/")
+            processed_data['media_file'] = media_rel_path
             
         # 標記檔案類型 (給前端顯示 Chip 用)
         if "_flagged_for_human" in target_path:
@@ -402,8 +396,6 @@ def get_chunk(filename: str):
 def save_chunk(payload: SavePayload):
     """
     存檔 API。
-    邏輯：不管來源是 aligned, flagged 還是 edited，
-    存檔時一律轉存為 '_edited.json'，確保數據不丟失且有跡可循。
     """
     try:
         # 1. 解析原始路徑
@@ -412,14 +404,13 @@ def save_chunk(payload: SavePayload):
         filename = os.path.basename(full_path)
         
         # 2. 建構目標檔名 (強制結尾為 _edited.json)
-        # 先移除所有可能的後綴，還原到核心 ID
         core_name = filename.replace("_flagged_for_human.json", "")\
                             .replace("_edited.json", "")\
                             .replace("_aligned.json", "")\
+                            .replace("_stitched.json", "")\
                             .replace("_verified_dataset.json", "")\
                             .replace(".json", "")
         
-        # 加上 _edited 後綴
         new_filename = f"{core_name}_edited.json"
         save_path = os.path.join(directory, new_filename)
         
@@ -436,8 +427,7 @@ def save_chunk(payload: SavePayload):
             
         print(f"💾 Saved to: {new_filename}")
         
-        # 5. 回傳新的相對路徑 (重要！讓前端可以更新狀態)
-        # 計算相對路徑: CaseName/chunk_x_edited.json
+        # 5. 回傳新的相對路徑
         relative_path = os.path.relpath(save_path, DATA_DIR).replace("\\", "/")
         
         return {
@@ -453,7 +443,7 @@ def save_chunk(payload: SavePayload):
 @app.post("/api/upload")
 async def upload_video(file: UploadFile = File(...), case_name: str = Form(...)):
     """
-    上傳新影片並建立案例資料夾
+    上傳新影片並建立案例資料夾 (結構更新：放入 source)
     """
     try:
         timestamp = datetime.now().strftime("%Y%m%d-%H%M")
@@ -463,15 +453,20 @@ async def upload_video(file: UploadFile = File(...), case_name: str = Form(...))
         if not case_name.strip():
             case_name = f"{timestamp}-{safe_base_name}"
         
-        # 儲存到 data/CaseName/
-        save_dir = os.path.join(DATA_DIR, case_name)
-        os.makedirs(save_dir, exist_ok=True)
+        # 1. 建立案例資料夾
+        case_dir = os.path.join(DATA_DIR, case_name)
+        os.makedirs(case_dir, exist_ok=True)
         
-        file_path = os.path.join(save_dir, file.filename)
+        # 2. 建立 source 資料夾
+        source_dir = os.path.join(case_dir, "source")
+        os.makedirs(source_dir, exist_ok=True)
+        
+        # 3. 儲存檔案到 source
+        file_path = os.path.join(source_dir, file.filename)
         with open(file_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        print(f"✅ Uploaded to: {save_dir}")
+        print(f"✅ Uploaded to: {source_dir}")
         return {"message": "Success", "path": file_path}
     
     except Exception as e:
@@ -480,5 +475,4 @@ async def upload_video(file: UploadFile = File(...), case_name: str = Form(...))
 
 if __name__ == "__main__":
     import uvicorn
-    # 確保 reload=True 在開發時很好用，會自動偵測程式碼變更重啟
     uvicorn.run("main:app", host="0.0.0.0", port=8001, reload=True)

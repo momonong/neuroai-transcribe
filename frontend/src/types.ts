@@ -8,6 +8,7 @@ export interface TranscriptSegment {
   sentence_id: number;
   needs_review: boolean;
   review_reason: string | null;
+  suggested_correction?: string | null;
 }
 
 export interface ChunkTimepoint {
