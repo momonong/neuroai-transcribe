@@ -5,7 +5,7 @@ import {
 } from '@mui/material';
 import { 
   PlayArrow, Sync, Person, Delete, Add, 
-  AutoFixHigh, Check, Close // 引入 Close Icon
+  AutoFixHigh, Check, Close 
 } from '@mui/icons-material';
 
 import type { TranscriptSegment } from '../types';
@@ -25,10 +25,26 @@ interface TranscriptItemProps {
   onResolveFlag: (index: number, action: 'accept' | 'ignore') => void;
 }
 
+const formatTimestamp = (totalSeconds: number): string => {
+  if (isNaN(totalSeconds) || totalSeconds < 0) return "00:00.00";
+  
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+  // 取小數點後兩位 (0.xx)
+  const centiseconds = Math.round((totalSeconds % 1) * 100);
+
+  // 補零處理 (例如 9 -> 09)
+  const mm = minutes.toString().padStart(2, '0');
+  const ss = seconds.toString().padStart(2, '0');
+  const cs = centiseconds.toString().padStart(2, '0');
+
+  return `${mm}:${ss}.${cs}`;
+};
+
 export const TranscriptItem: React.FC<TranscriptItemProps> = ({
   index, segment, videoOffset, displaySpeaker, isDoctor,
   onTextChange, onSyncTime, onJumpToTime, onSpeakerClick, onDelete, onAddAfter,
-  onResolveFlag // 接收新函式
+  onResolveFlag
 }) => {
   
   const absStart = segment.start + videoOffset;
@@ -41,14 +57,13 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
         mb: 2, 
         display: 'flex', 
         gap: 2,
-        // 只有當 needs_review 為 true 時才變色
         bgcolor: segment.needs_review ? '#fffbeb' : 'white', 
         border: segment.needs_review ? '1px solid #fcd34d' : '1px solid transparent',
         transition: 'all 0.2s',
         '&:hover': { boxShadow: 3 }
       }}
     >
-      {/* 左側控制區 (保持不變) */}
+      {/* 左側控制區 */}
       <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 1, minWidth: '100px' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
           <Tooltip title="跳轉播放">
@@ -62,9 +77,11 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
             </IconButton>
           </Tooltip>
         </Box>
-        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#64748b', mt: -0.5 }}>
-          {absStart.toFixed(1)}s
+        
+        <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#64748b', mt: -0.5, fontWeight: 'bold' }}>
+          {formatTimestamp(absStart)}
         </Typography>
+
         <Box 
           onClick={(e) => onSpeakerClick(e, index)}
           sx={{ 
@@ -98,6 +115,7 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
           }}
         />
 
+        {/* AI 建議修正區塊 */}
         {segment.needs_review && segment.suggested_correction && (
           <Paper 
             variant="outlined" 
@@ -114,7 +132,6 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
               <AutoFixHigh sx={{ color: '#ea580c', fontSize: 20 }} />
               
-              {/* 把原因藏在 Tooltip 裡，介面更乾淨 */}
               <Tooltip title={segment.review_reason || "AI 偵測到可能的錯誤"} arrow placement="top">
                 <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 600, cursor: 'help', borderBottom: '1px dotted #9a3412' }}>
                   AI 建議：
@@ -127,7 +144,6 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
             </Box>
             
             <Box sx={{ display: 'flex', gap: 1 }}>
-                {/* 忽略按鈕 (保留原始文字，移除標記) */}
                 <Button
                   size="small"
                   variant="outlined"
@@ -142,7 +158,6 @@ export const TranscriptItem: React.FC<TranscriptItemProps> = ({
                   忽略
                 </Button>
 
-                {/* 接受按鈕 (替換文字，移除標記) */}
                 <Button
                   size="small"
                   variant="contained"
