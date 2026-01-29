@@ -1,16 +1,18 @@
 import os
 import json
 import torch
-import pathlib
 import gc
 import time
-import sys
+import pathlib
 from typing import List, Dict
 
 from .config import config
 
-# --- RTX 5090 / PyTorch Patch (保留) ---
+# ==========================================
+# 🔥 必備 Patch: 解決 PyTorch 2.6+ 權重載入錯誤 🔥
+# ==========================================
 try:
+    # 強制覆寫 torch.load，預設 weights_only=False
     original_load = torch.load
     def permissive_load(*args, **kwargs):
         if 'weights_only' not in kwargs:
@@ -18,53 +20,58 @@ try:
         return original_load(*args, **kwargs)
     torch.load = permissive_load
 
+    # 加入安全白名單 (防止 Diarization 載入失敗)
     import pyannote.audio.core.task
     from torch.torch_version import TorchVersion
-    target_classes = ["Specifications", "Problem", "Resolution"]
+    
     safe_list = [TorchVersion, pathlib.PosixPath, pathlib.WindowsPath]
+    # 嘗試加入 pyannote 可能用到的類別
+    target_classes = ["Specifications", "Problem", "Resolution"]
     for name in target_classes:
         if hasattr(pyannote.audio.core.task, name):
-            cls = getattr(pyannote.audio.core.task, name)
-            safe_list.append(cls)
+            safe_list.append(getattr(pyannote.audio.core.task, name))
+            
     if hasattr(torch.serialization, "add_safe_globals"):
         torch.serialization.add_safe_globals(safe_list)
-except ImportError:
-    pass
 except Exception as e:
-    print(f"⚠️ Patch warning: {e}")
+    print(f"⚠️ Warning: Patching torch.load failed: {e}")
 
+# 正常 import
 from faster_whisper import WhisperModel
 from pyannote.audio import Pipeline
 
 class PipelinePhase2:
     def __init__(self):
-        self.device = config.device
-        self.compute_type = config.compute_type
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.compute_type = "float16" if self.device == "cuda" else "int8"
+        self.whisper_model = None
+        self.diarization_pipeline = None
 
-    # ==========================================
-    # 🚀 核心改動：批次處理 Whisper
-    # ==========================================
+    def _clear_gpu(self):
+        """強制清理 GPU 資源"""
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
+        time.sleep(1)
+
     def run_whisper_batch(self, tasks: List[Dict]):
-        """
-        一次性處理所有檔案的 Whisper 轉錄
-        tasks: list of {'wav': path, 'json': path}
-        """
         print(f"\n🎧 [Batch Whisper] Starting batch for {len(tasks)} files...", flush=True)
         
-        # 過濾掉已經跑過的
         todo_tasks = [t for t in tasks if not os.path.exists(t['json'])]
         if not todo_tasks:
             print("   ⏩ All Whisper tasks completed. Skipping.", flush=True)
             return
 
-        model = None
         try:
             print(f"   🔄 Loading Whisper Model ({config.whisper_model})...", flush=True)
-            model = WhisperModel(
+            self.whisper_model = WhisperModel(
                 config.whisper_model, 
                 device=self.device, 
                 compute_type=self.compute_type,
-                download_root=config.model_cache_dir 
+                download_root=config.model_cache_dir,
+                cpu_threads=4,
+                num_workers=1
             )
 
             for idx, task in enumerate(todo_tasks):
@@ -72,43 +79,40 @@ class PipelinePhase2:
                 json_path = task['json']
                 print(f"   [{idx+1}/{len(todo_tasks)}] Transcribing: {os.path.basename(wav_path)}", flush=True)
                 
-                segments, info = model.transcribe(
+                segments, info = self.whisper_model.transcribe(
                     wav_path,
                     beam_size=config.whisper_beam_size,
                     word_timestamps=True,
-                    vad_filter=True,
-                    language=config.whisper_language
+                    vad_filter=True
                 )
                 
                 results = []
-                for seg in segments:
+                for seg in list(segments): # 強制執行
                     results.append({
                         "start": seg.start,
                         "end": seg.end,
-                        "text": seg.text,
+                        "text": seg.text.strip(),
                         "words": [{"start": w.start, "end": w.end, "word": w.word} for w in seg.words] if seg.words else []
                     })
                 
                 with open(json_path, 'w', encoding='utf-8') as f:
                     json.dump(results, f, ensure_ascii=False, indent=2)
+                
+                # 稍微清一下
+                self._clear_gpu()
 
         except Exception as e:
             print(f"   ❌ Batch Whisper Failed: {e}", flush=True)
-            raise e
+            # 這裡不 raise，讓它有機會去跑已經完成的 Diarization (雖然通常會崩潰)
         finally:
-            if model:
-                del model
+            # 跑完務必刪除模型
+            if self.whisper_model:
+                del self.whisper_model
+                self.whisper_model = None
             self._clear_gpu()
             print("   🧹 Whisper Model Unloaded.", flush=True)
 
-    # ==========================================
-    # 🚀 核心改動：批次處理 Pyannote
-    # ==========================================
     def run_diarization_batch(self, tasks: List[Dict]):
-        """
-        一次性處理所有檔案的 Pyannote 分離
-        tasks: list of {'wav': path, 'json': path}
-        """
         print(f"\n🗣️ [Batch Diarization] Starting batch for {len(tasks)} files...", flush=True)
 
         todo_tasks = [t for t in tasks if not os.path.exists(t['json'])]
@@ -116,10 +120,9 @@ class PipelinePhase2:
             print("   ⏩ All Diarization tasks completed. Skipping.", flush=True)
             return
 
-        pipeline = None
         try:
             print(f"   🔄 Loading Pyannote Model...", flush=True)
-            pipeline = Pipeline.from_pretrained(
+            self.diarization_pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
                 use_auth_token=config.hf_token,
                 cache_dir=config.model_cache_dir
@@ -130,7 +133,7 @@ class PipelinePhase2:
                 json_path = task['json']
                 print(f"   [{idx+1}/{len(todo_tasks)}] Diarizing: {os.path.basename(wav_path)}", flush=True)
                 
-                diarization = pipeline(wav_path)
+                diarization = self.diarization_pipeline(wav_path)
 
                 diar_segments = []
                 for turn, _, speaker in diarization.itertracks(yield_label=True):
@@ -142,23 +145,22 @@ class PipelinePhase2:
                 
                 with open(json_path, 'w', encoding='utf-8') as f:
                     json.dump(diar_segments, f, ensure_ascii=False, indent=2)
+                
+                self._clear_gpu()
 
         except Exception as e:
             print(f"   ❌ Batch Diarization Failed: {e}", flush=True)
             raise e
         finally:
-            if pipeline:
-                del pipeline
+            if self.diarization_pipeline:
+                del self.diarization_pipeline
+                self.diarization_pipeline = None
             self._clear_gpu()
             print("   🧹 Pyannote Model Unloaded.", flush=True)
 
-    # Alignment 其實不需要批次 (因為它是 CPU 快算)，但為了統一介面可以留著
     def run_alignment(self, whisper_json, diar_json, final_output_path, chunk_offset_sec=0):
-        # ... (這裡保持原樣，不需要改) ...
         try:
             if not os.path.exists(whisper_json) or not os.path.exists(diar_json):
-                # 如果前兩個步驟失敗，這步直接跳過，不報錯，避免 crash
-                print(f"   ⚠️ Missing input for alignment: {os.path.basename(final_output_path)}")
                 return
 
             with open(whisper_json, 'r', encoding='utf-8') as f: w_segs = json.load(f)
@@ -191,10 +193,3 @@ class PipelinePhase2:
                 
         except Exception as e:
             print(f"   ❌ Alignment Failed: {e}", flush=True)
-
-    def _clear_gpu(self):
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.synchronize()
-        time.sleep(1) # 給 OS 一點時間回收

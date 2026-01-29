@@ -125,6 +125,9 @@ class SmartAudioSplitter:
             filename = f"chunk_{i+1}_{int(start)}_{int(end)}.wav"
             filepath = os.path.join(self.output_dir, filename)
             
+            # 確保輸出目錄存在 (預防萬一)
+            os.makedirs(os.path.dirname(filepath), exist_ok=True)
+            
             # 改用 WAV 格式匯出
             chunk.export(filepath, format="wav")
             
