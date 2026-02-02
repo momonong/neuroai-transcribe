@@ -148,7 +148,7 @@ export const useTranscript = () => {
           sentence_id: Date.now(),
           start: newStart,
           end: newStart + 2.0,
-          text: "New segment...",
+          text: "",
           speaker: currentSeg ? currentSeg.speaker : "SPEAKER_00",
           status: "new",
           verification_score: 1.0,
