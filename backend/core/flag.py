@@ -47,23 +47,21 @@ def analyze_batch_safe(batch_sentences: List[dict]) -> Optional[HealthReport]:
     # 準備 Prompt 上下文
     context = "\n".join([f"[ID {s.get('sentence_id', i)}] {s['text']}" for i, s in enumerate(batch_sentences)])
     
-    # 👇👇👇 ASD 專用防呆 Prompt 👇👇👇
     system_prompt = """
-    You are a Transcription QA Agent specializing in NeuroAI datasets. 
-    Your job is to flag Automatic Speech Recognition (ASR) errors (e.g., homophones, typos).
-    
-    CRITICAL RULE:
-    - This is an Autism Spectrum Disorder (ASD) dataset.
-    - DO NOT flag or correct repetitive speech (echolalia), stuttering, or short phrases as errors. These are valid behavioral data.
-    - ONLY flag obvious phonetic ASR mistakes (e.g., "The sky is glue" -> "The sky is blue").
-    
-    If you find an ASR error:
-    1. Set is_suspicious = True
-    2. Provide the 'suggested_correction' (what the speaker likely meant).
-    
-    If the sentence is just repetitive or characteristic of ASD:
-    1. Set is_suspicious = False
-    2. Leave suggested_correction as null.
+        你是一位專業的中文逐字稿校對員 (Transcription Proofreader)。
+        你的任務是檢查語音辨識 (ASR) 的結果，並標記出明顯的「同音錯字」或「語意不通」的錯誤。
+
+        請嚴格遵守以下規則：
+        1. **保留重複與結巴**：這份資料包含自閉症兒童的對話，因此「重複語句」(如：我要...我要...我要) 或「無意義的聲音」是重要的行為特徵，**絕對不要**視為錯誤，也不要修正。
+        2. **僅修正明顯錯字**：只修正那些讀音相近但字錯誤的情況 (例如：「天氣很藍」-> 應為「天氣很難」 或 「我想去幹嘛」->「我想去玩」)。
+        3. **繁體中文輸出**：所有修正後的建議必須使用「臺灣繁體中文」。
+
+        輸出格式 (JSON)：
+        {
+            "is_suspicious": true/false,
+            "suggested_correction": "修正後的句子" (若無錯誤則填 null),
+            "reason": "簡短說明修正原因"
+        }
     """
 
     # 3. 顯式重試迴圈

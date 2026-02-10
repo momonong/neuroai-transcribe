@@ -5,6 +5,7 @@ import gc
 import time
 import pathlib
 from typing import List, Dict
+from opencc import OpenCC
 
 from .config import config
 
@@ -46,6 +47,7 @@ class PipelinePhase2:
         self.compute_type = "float16" if self.device == "cuda" else "int8"
         self.whisper_model = None
         self.diarization_pipeline = None
+        self.cc = OpenCC('s2twp')
 
     def _clear_gpu(self):
         """強制清理 GPU 資源"""
@@ -87,12 +89,24 @@ class PipelinePhase2:
                 )
                 
                 results = []
-                for seg in list(segments): # 強制執行
+                for seg in list(segments): 
+                    text_traditional = self.cc.convert(seg.text.strip())
+                    
+                    # 處理單字層級的簡轉繁
+                    words_list = []
+                    if seg.words:
+                        for w in seg.words:
+                            words_list.append({
+                                "start": w.start, 
+                                "end": w.end, 
+                                "word": self.cc.convert(w.word) # 單字也要轉
+                            })
+
                     results.append({
                         "start": seg.start,
                         "end": seg.end,
-                        "text": seg.text.strip(),
-                        "words": [{"start": w.start, "end": w.end, "word": w.word} for w in seg.words] if seg.words else []
+                        "text": text_traditional, # 存入繁體
+                        "words": words_list
                     })
                 
                 with open(json_path, 'w', encoding='utf-8') as f:
