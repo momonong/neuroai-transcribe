@@ -4,6 +4,7 @@
 import os
 import json
 import shutil
+import time
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from datetime import datetime
@@ -244,6 +245,36 @@ class FileManager:
             print(f"❌ Load JSON Error: {e}")
             return None
 
+    # ==========================================
+    # 進度狀態管理
+    # ==========================================
+
+    def save_status(self, case_name: str, step: str, progress: int, message: str = ""):
+            """儲存目前的 Pipeline 進度到 status.json"""
+            status_file = self.get_source_dir(case_name).parent / "status.json"
+            data = {
+                "case_name": case_name,
+                "step": step,       # 例如: "Whisper", "Diarization"
+                "progress": progress, # 0-100
+                "message": message,
+                "timestamp": time.time()
+            }
+            try:
+                with open(status_file, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False)
+            except Exception as e:
+                print(f"⚠️ Failed to save status: {e}")
+
+    def get_status(self, case_name: str) -> Dict:
+        """讀取目前的進度"""
+        status_file = self.get_source_dir(case_name).parent / "status.json"
+        if not status_file.exists():
+            return {"progress": 0, "step": "Init", "message": "Waiting..."}
+        try:
+            with open(status_file, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except:
+            return {"progress": 0, "step": "Error", "message": "Cannot read status"}
 
 # 建立全域實例
 file_manager = FileManager()

@@ -6,10 +6,14 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+from core.config import config
+from core.file_manager import file_manager
+from core.run_pipeline import run_pipeline
 
 app = FastAPI()
 
@@ -441,37 +445,38 @@ def save_chunk(payload: SavePayload):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/upload")
-async def upload_video(file: UploadFile = File(...), case_name: str = Form(...)):
-    """
-    上傳新影片並建立案例資料夾 (結構更新：放入 source)
-    """
+async def upload_video_endpoint(
+    background_tasks: BackgroundTasks,  # ★ 注入 BackgroundTasks
+    file: UploadFile = File(...), 
+    case_name: str = Form(...)
+):
     try:
-        timestamp = datetime.now().strftime("%Y%m%d-%H%M")
-        base_name = os.path.splitext(file.filename)[0]
-        safe_base_name = base_name.replace(" ", "-")
+        # 1. 儲存原始檔案
+        file_ext = os.path.splitext(file.filename)[1]
+        safe_filename = f"{case_name}{file_ext}"
+        save_path = os.path.join(DATA_DIR, case_name, "source", safe_filename)
         
-        if not case_name.strip():
-            case_name = f"{timestamp}-{safe_base_name}"
+        # 確保目錄存在
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
         
-        # 1. 建立案例資料夾
-        case_dir = os.path.join(DATA_DIR, case_name)
-        os.makedirs(case_dir, exist_ok=True)
-        
-        # 2. 建立 source 資料夾
-        source_dir = os.path.join(case_dir, "source")
-        os.makedirs(source_dir, exist_ok=True)
-        
-        # 3. 儲存檔案到 source
-        file_path = os.path.join(source_dir, file.filename)
-        with open(file_path, "wb") as buffer:
+        with open(save_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        print(f"✅ Uploaded to: {source_dir}")
-        return {"message": "Success", "path": file_path}
-    
+        # 2. ★ 關鍵：不要用 await run_pipeline，改用 add_task
+        # 這樣 API 會立刻回傳 "OK"，不會讓前端 timeout
+        background_tasks.add_task(run_pipeline, save_path, case_name)
+        
+        return {"status": "processing_started", "case_name": case_name, "message": "Pipeline started in background"}
+
     except Exception as e:
-        print(f"❌ Upload error: {e}")
+        print(f"Upload Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/status/{case_name}")
+async def get_status(case_name: str):
+    """前端透過輪詢 (Polling) 這個 API 來獲取進度"""
+    status = file_manager.get_status(case_name)
+    return status
 
 if __name__ == "__main__":
     import uvicorn

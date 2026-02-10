@@ -3,7 +3,8 @@ import {
   Box, List, ListItemButton, ListItemIcon, ListItemText, 
   Paper, Button, Select, MenuItem, Snackbar, Alert, Typography, Divider, 
   Menu, Dialog, DialogTitle, DialogContent, TextField, DialogActions,
-  Grid as Grid, InputAdornment, IconButton, Autocomplete, Breadcrumbs, Chip
+  Grid as Grid, InputAdornment, IconButton, Autocomplete, Breadcrumbs, Chip,
+  LinearProgress
 } from '@mui/material';
 import { 
   Add, PlayCircle, Pause,
@@ -20,7 +21,6 @@ import { ChunkTimepoints } from './components/ChunkTimepoints';
 
 const STATIC_BASE = `/static`;
 
-// 時間格式化 (mm:ss)
 const formatMs = (ms: number) => {
     if (isNaN(ms)) return "00:00";
     const totalSeconds = Math.floor(ms / 1000);
@@ -37,7 +37,7 @@ function App() {
     hasUnsavedChanges, loading, error,
     updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
     deleteSegment, addSegment, uploadVideo, existingTesters, fetchTesters,
-    resolveFlag // ★ 1. 從 hook 引入穩定的函式 (解決卡頓的關鍵)
+    resolveFlag 
   } = useTranscript();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -57,13 +57,16 @@ function App() {
   const [newSpeakerName, setNewSpeakerName] = useState("");
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadCaseName, setUploadCaseName] = useState("");
+  
+  // ★ 修改：進度條相關 State
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [currentStep, setCurrentStep] = useState(""); // 顯示後端回傳的 step + message
 
   // Playback
   const [jumpInput, setJumpInput] = useState("");
   const [autoPlayAfterJump, setAutoPlayAfterJump] = useState(false);
 
-  // 1. 載入影片列表
   const fetchVideos = () => {
      axios.get(`/api/videos`)
        .then(res => {
@@ -79,14 +82,12 @@ function App() {
       fetchVideos();
   }, []);
 
-  // 2. 影片變更 -> 鎖定 Case -> 重新撈取該 Case 的 Chunks
   useEffect(() => {
       if (mediaFileName) {
           const parts = mediaFileName.split('/');
           if (parts.length >= 2) {
               const caseName = parts[0];
               setSelectedCase(caseName);
-              // 呼叫 API 取得過濾後的乾淨列表
               axios.get(`/api/temp/chunks?case=${caseName}`)
                    .then(res => {
                        setCaseChunks(res.data.files);
@@ -128,16 +129,11 @@ function App() {
     }
   };
 
-  // ★ 2. 這裡原本的 handleResolveFlag 已經刪除了！
-  // 因為寫在這裡會導致每次 render 都產生新函式 -> 導致子元件全體重繪 -> 導致卡頓。
-  // 我們改用從 hook 傳入的 resolveFlag。
-
   const handleSaveWrapper = async () => {
       try {
           await save();
           setToast({ open: true, msg: '儲存成功！', type: 'success' });
 
-          // 存檔後自動更新邏輯
           if (selectedCase && selectedChunk) {
               const res = await axios.get(`/api/temp/chunks?case=${selectedCase}`);
               const newFiles = res.data.files;
@@ -167,19 +163,58 @@ function App() {
     setAnchorEl(null);
   };
 
+  // ★★★ 核心修改：輪詢 (Polling) 邏輯 ★★★
   const handleUploadConfirm = async () => {
       if(!uploadFile || !uploadCaseName) return;
+      
       setIsUploading(true);
+      setUploadProgress(0);
+      setCurrentStep("Initiating Upload...");
+
       try {
+          // 1. 發送上傳請求 (現在後端會秒回 "processing_started")
           await uploadVideo(uploadFile, uploadCaseName);
-          setToast({ open: true, msg: '上傳成功！', type: 'success' });
-          setIsUploadOpen(false);
-          fetchVideos();
-          fetchTesters();
+          
+          setCurrentStep("Upload Complete. Starting AI Pipeline...");
+
+          // 2. 開始輪詢狀態
+          const pollInterval = setInterval(async () => {
+              try {
+                  // 呼叫我們剛寫好的 get_status API
+                  const res = await axios.get(`/api/status/${uploadCaseName}`);
+                  const { progress, step, message } = res.data;
+
+                  // 更新 UI
+                  setUploadProgress(progress);
+                  setCurrentStep(`${step}: ${message}`);
+
+                  // 3. 判斷是否結束
+                  if (progress >= 100) {
+                      clearInterval(pollInterval);
+                      setToast({ open: true, msg: 'Pipeline 執行成功！', type: 'success' });
+                      
+                      setTimeout(() => {
+                          setIsUploadOpen(false);
+                          setUploadProgress(0);
+                          setIsUploading(false);
+                          fetchVideos();
+                          fetchTesters();
+                      }, 1000);
+                  } 
+                  else if (step === "Error" || progress === -1) {
+                      clearInterval(pollInterval);
+                      setIsUploading(false);
+                      setToast({ open: true, msg: `處理失敗: ${message}`, type: 'error' });
+                  }
+              } catch (err) {
+                  // 網路錯誤等，不中斷，繼續試
+                  console.warn("Polling error:", err);
+              }
+          }, 2000); // 每 2 秒問一次
+
       } catch(e) {
-          setToast({ open: true, msg: '上傳失敗', type: 'error' });
-      } finally {
           setIsUploading(false);
+          setToast({ open: true, msg: '上傳失敗，請檢查後端日誌', type: 'error' });
       }
   };
 
@@ -412,14 +447,14 @@ function App() {
                         onSpeakerClick={handleSpeakerClick}
                         onDelete={deleteSegment}
                         onAddAfter={addSegment}
-                        onResolveFlag={resolveFlag} // ★ 3. 傳入 Hook 提供的穩定函式
+                        onResolveFlag={resolveFlag} 
                     />
                 ))}
               </Box>
           </Box>
       </Box>
 
-      {/* Dialogs... (保持不變) */}
+      {/* Dialogs */}
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
           {allSpeakers.map(spk => <MenuItem key={spk} onClick={() => handleSelectExistingSpeaker(spk)}>{speakerMap[spk] || spk}</MenuItem>)}
           <Divider /><MenuItem onClick={() => { setAnchorEl(null); setIsNewSpeakerDialogOpen(true); }} sx={{color:'blue'}}><Add/> 新增...</MenuItem>
@@ -431,24 +466,139 @@ function App() {
           <DialogActions><Button onClick={() => setIsNewSpeakerDialogOpen(false)}>取消</Button><Button onClick={() => {if(activeSegmentIndex!==null && newSpeakerName) updateSpeaker(activeSegmentIndex, newSpeakerName); setIsNewSpeakerDialogOpen(false);}}>確認</Button></DialogActions>
       </Dialog>
 
-      <Dialog open={isUploadOpen} onClose={() => !isUploading && setIsUploadOpen(false)}>
-          <DialogTitle>上傳新影片</DialogTitle>
-          <DialogContent sx={{ pt: 2, minWidth: 400, display: 'flex', flexDirection: 'column', gap: 2 }}>
+      {/* ★ 上傳與進度 Dialog ★ */}
+      <Dialog 
+          open={isUploadOpen} 
+          onClose={() => !isUploading && setIsUploadOpen(false)}
+          maxWidth="sm"
+          fullWidth
+      >
+          <DialogTitle sx={{ pb: 1 }}>
+              上傳新案例與執行 Pipeline
+          </DialogTitle>
+          
+          <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
+              {/* 修復標題被切掉：增加 mt: 1 */}
               <Autocomplete
                   freeSolo
                   options={existingTesters || []}
                   value={uploadCaseName}
                   onInputChange={(_, v) => setUploadCaseName(v)}
-                  renderInput={(params) => <TextField {...params} label="案例名稱" fullWidth />}
+                  renderInput={(params) => (
+                      <TextField 
+                          {...params} 
+                          label="案例名稱 (Case Name)" 
+                          fullWidth 
+                          variant="outlined"
+                          sx={{ mt: 1 }} 
+                      />
+                  )}
               />
-              <Button variant="outlined" component="label" fullWidth sx={{ height: 50, borderStyle: 'dashed' }}>
-                  {uploadFile ? uploadFile.name : "選擇檔案"}
-                  <input type="file" hidden accept="video/*,audio/*" onChange={(e) => setUploadFile(e.target.files?.[0] || null)} />
-              </Button>
+
+              {!isUploading ? (
+                  // === 狀態 A: 等待上傳 (大按鈕) ===
+                  <Button 
+                      variant="outlined" 
+                      component="label" 
+                      fullWidth 
+                      sx={{ 
+                          height: 120, 
+                          borderStyle: 'dashed', 
+                          borderWidth: 2,
+                          borderColor: uploadFile ? '#38bdf8' : '#94a3b8',
+                          bgcolor: uploadFile ? 'rgba(56, 189, 248, 0.05)' : 'transparent',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 1,
+                          '&:hover': {
+                              borderWidth: 2,
+                              borderColor: '#38bdf8',
+                              bgcolor: 'rgba(56, 189, 248, 0.1)'
+                          }
+                      }}
+                  >
+                      {uploadFile ? (
+                          <>
+                              <Movie fontSize="large" color="primary"/>
+                              <Typography variant="h6" color="primary">{uploadFile.name}</Typography>
+                              <Typography variant="caption" color="text.secondary">點擊更換檔案</Typography>
+                          </>
+                      ) : (
+                          <>
+                              <Add fontSize="large" sx={{ opacity: 0.5 }}/>
+                              <Typography variant="h6" color="text.secondary">選擇影片檔案</Typography>
+                              <Typography variant="caption" color="text.secondary">支援 .mp4, .wav</Typography>
+                          </>
+                      )}
+                        <input 
+                            type="file" 
+                            hidden 
+                            accept="video/*,audio/*" 
+                            onChange={(e) => {
+                                const file = e.target.files?.[0] || null;
+                                setUploadFile(file);
+                                
+                                // ★ 新增：自動將檔名填入案例名稱 (移除副檔名)
+                                if (file) {
+                                    const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+                                    setUploadCaseName(fileNameWithoutExt);
+                                }
+                            }} 
+                        />
+                  </Button>
+              ) : (
+                  // === 狀態 B: 真實進度條 (Polling) ===
+                  <Paper variant="outlined" sx={{ p: 3, bgcolor: '#f8fafc', borderColor: '#cbd5e1' }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, justifyContent: 'space-between' }}>
+                          <Typography variant="subtitle1" fontWeight="bold" color="#0f172a">
+                              {currentStep}
+                          </Typography>
+                          <Typography variant="h6" color="primary" fontWeight="bold">
+                              {Math.round(uploadProgress)}%
+                          </Typography>
+                      </Box>
+                      
+                      <Box sx={{ width: '100%', mr: 1 }}>
+                          <LinearProgress 
+                              variant="determinate" 
+                              value={uploadProgress} 
+                              sx={{ 
+                                  height: 10, 
+                                  borderRadius: 5,
+                                  bgcolor: '#e2e8f0',
+                                  '& .MuiLinearProgress-bar': {
+                                      borderRadius: 5,
+                                      bgcolor: '#3b82f6' 
+                                  }
+                              }}
+                          />
+                      </Box>
+                      
+                      <Typography variant="caption" sx={{ display:'block', mt: 1.5, color: '#64748b' }}>
+                          正在後端進行 AI 運算 (可關閉視窗，後台將繼續執行)
+                      </Typography>
+                  </Paper>
+              )}
+
           </DialogContent>
-          <DialogActions>
-              <Button onClick={() => setIsUploadOpen(false)} disabled={isUploading}>取消</Button>
-              <Button onClick={handleUploadConfirm} variant="contained" disabled={isUploading}>上傳</Button>
+          
+          <DialogActions sx={{ px: 3, pb: 3 }}>
+              <Button onClick={() => setIsUploadOpen(false)} disabled={isUploading} size="large">
+                  取消
+              </Button>
+              
+              {!isUploading && (
+                  <Button 
+                      onClick={handleUploadConfirm} 
+                      variant="contained" 
+                      size="large"
+                      disabled={!uploadFile || !uploadCaseName}
+                      startIcon={<PlayCircle />}
+                      sx={{ px: 4 }}
+                  >
+                      開始執行 Pipeline
+                  </Button>
+              )}
           </DialogActions>
       </Dialog>
 
