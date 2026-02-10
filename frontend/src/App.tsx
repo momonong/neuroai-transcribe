@@ -575,7 +575,7 @@ function App() {
                       </Box>
                       
                       <Typography variant="caption" sx={{ display:'block', mt: 1.5, color: '#64748b' }}>
-                          正在後端進行 AI 運算 (可關閉視窗，後台將繼續執行)
+                          正在後端進行 AI 運算
                       </Typography>
                   </Paper>
               )}
