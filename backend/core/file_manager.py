@@ -276,5 +276,85 @@ class FileManager:
         except:
             return {"progress": 0, "step": "Error", "message": "Cannot read status"}
 
+    # ==========================================
+    # 資料集合併 + 下載
+    # ==========================================
+
+    def merge_chunks(self, case_name: str, suffix: str) -> List[Dict]:
+        """
+        合併指定案例的所有 Chunk 資料 (增強版：支援 List 與 Dict 格式)
+        """
+        inter_dir = self.get_intermediate_dir(case_name)
+        if not inter_dir.exists():
+            print(f"❌ [Merge] Directory not found: {inter_dir}")
+            return []
+
+        # 1. 取得所有 .json 檔案
+        all_files = list(inter_dir.glob("*.json"))
+        target_key = suffix.replace(".json", "") 
+        
+        files = []
+        for f in all_files:
+            if f.name.endswith(suffix):
+                files.append(f)
+            elif target_key in f.name and "json" in f.suffix:
+                files.append(f)
+
+        # 2. 自動 Fallback: 如果真的找不到檔案 (例如還沒按過儲存)
+        if not files:
+            print(f"⚠️ [Merge] No files found matching '{suffix}'.")
+            if "edited" in suffix:
+                print("   ↪ Falling back to '_flagged_for_human.json'")
+                return self.merge_chunks(case_name, "_flagged_for_human.json")
+            return []
+
+        # 3. 排序
+        def sort_key(f):
+            try:
+                parts = f.name.split('_')
+                for p in parts:
+                    if p.isdigit():
+                        return int(p)
+                return 0
+            except:
+                return 0
+        files.sort(key=sort_key)
+        
+        print(f"📦 [Merge] Found {len(files)} files for {suffix}. Merging...")
+
+        merged_data = []
+        for f in files:
+            try:
+                data = self.load_json(f)
+                
+                # --- 👇 關鍵修改：支援多種 JSON 結構 👇 ---
+                items_to_add = []
+                
+                if isinstance(data, list):
+                    # 格式 A: 直接是陣列 [{}, {}]
+                    items_to_add = data
+                elif isinstance(data, dict):
+                    # 格式 B: 包在物件裡 {"segments": [...]} 或 {"data": [...]}
+                    # 嘗試常見的 key
+                    for key in ["segments", "data", "results", "chunks"]:
+                        if key in data and isinstance(data[key], list):
+                            items_to_add = data[key]
+                            break
+                    # 如果都沒找到，但本身是 dict，可能要看情況 (這裡先忽略)
+                
+                if items_to_add:
+                    # print(f"   📄 {f.name}: +{len(items_to_add)} items") # Debug 用
+                    merged_data.extend(items_to_add)
+                else:
+                    print(f"   ⚠️ {f.name} is valid JSON but contains no list data (Structure: {type(data)})")
+                
+                # --- 👆 修改結束 👆 ---
+
+            except Exception as e:
+                print(f"⚠️ [Merge] Error reading {f.name}: {e}")
+        
+        print(f"✅ [Merge] Total merged items: {len(merged_data)}")
+        return merged_data
+
 # 建立全域實例
 file_manager = FileManager()

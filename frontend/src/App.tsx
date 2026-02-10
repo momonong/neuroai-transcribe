@@ -9,7 +9,8 @@ import {
 import { 
   Add, PlayCircle, Pause,
   Description, Refresh,
-  Movie, Timer, FolderOpen, Edit, CheckCircle, Warning, AccessTime
+  Movie, Timer, FolderOpen, Edit, CheckCircle, Warning, AccessTime,
+  Download, AutoFixHigh, GraphicEq, RecordVoiceOver, Cable // ★ 新增圖示
 } from '@mui/icons-material';
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import axios from 'axios';
@@ -58,10 +59,13 @@ function App() {
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadCaseName, setUploadCaseName] = useState("");
   
-  // ★ 修改：進度條相關 State
+  // ★ 下載選單 State
+  const [downloadAnchor, setDownloadAnchor] = useState<null | HTMLElement>(null);
+
+  // ★ 進度條相關 State
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [currentStep, setCurrentStep] = useState(""); // 顯示後端回傳的 step + message
+  const [currentStep, setCurrentStep] = useState(""); 
 
   // Playback
   const [jumpInput, setJumpInput] = useState("");
@@ -163,7 +167,22 @@ function App() {
     setAnchorEl(null);
   };
 
-  // ★★★ 核心修改：輪詢 (Polling) 邏輯 ★★★
+  // ★ 新增：下載處理函式 (解決 window.open 被擋的問題)
+  const handleDownloadFile = (type: string) => {
+      if (!selectedCase) return;
+      
+      // 建立隱藏的 a 標籤來觸發下載
+      const link = document.createElement('a');
+      link.href = `/api/export/${selectedCase}/${type}`;
+      link.setAttribute('download', `${selectedCase}_${type}.json`); // 建議檔名
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+
+      setDownloadAnchor(null); // 關閉選單
+  };
+
+  // ★ 上傳 Polling 邏輯
   const handleUploadConfirm = async () => {
       if(!uploadFile || !uploadCaseName) return;
       
@@ -172,23 +191,18 @@ function App() {
       setCurrentStep("Initiating Upload...");
 
       try {
-          // 1. 發送上傳請求 (現在後端會秒回 "processing_started")
           await uploadVideo(uploadFile, uploadCaseName);
           
           setCurrentStep("Upload Complete. Starting AI Pipeline...");
 
-          // 2. 開始輪詢狀態
           const pollInterval = setInterval(async () => {
               try {
-                  // 呼叫我們剛寫好的 get_status API
                   const res = await axios.get(`/api/status/${uploadCaseName}`);
                   const { progress, step, message } = res.data;
 
-                  // 更新 UI
                   setUploadProgress(progress);
                   setCurrentStep(`${step}: ${message}`);
 
-                  // 3. 判斷是否結束
                   if (progress >= 100) {
                       clearInterval(pollInterval);
                       setToast({ open: true, msg: 'Pipeline 執行成功！', type: 'success' });
@@ -207,10 +221,9 @@ function App() {
                       setToast({ open: true, msg: `處理失敗: ${message}`, type: 'error' });
                   }
               } catch (err) {
-                  // 網路錯誤等，不中斷，繼續試
                   console.warn("Polling error:", err);
               }
-          }, 2000); // 每 2 秒問一次
+          }, 2000); 
 
       } catch(e) {
           setIsUploading(false);
@@ -311,7 +324,16 @@ function App() {
                           <FolderOpen fontSize="small"/> 
                           {selectedCase ? '段落列表 (Chunks)' : '請先選擇影片'}
                       </Typography>
-                      <IconButton size="small" onClick={() => { if(selectedCase) axios.get(`/api/temp/chunks?case=${selectedCase}`).then(res => setCaseChunks(res.data.files)); }}><Refresh fontSize="small" sx={{color:'#64748b'}}/></IconButton>
+                      
+                      {/* ★ 下載按鈕與重新整理 ★ */}
+                      <Box>
+                          <IconButton size="small" onClick={(e) => setDownloadAnchor(e.currentTarget)} disabled={!selectedCase}>
+                              <Download fontSize="small" sx={{color: selectedCase ? '#38bdf8' : '#64748b'}}/>
+                          </IconButton>
+                          <IconButton size="small" onClick={() => { if(selectedCase) axios.get(`/api/temp/chunks?case=${selectedCase}`).then(res => setCaseChunks(res.data.files)); }}>
+                              <Refresh fontSize="small" sx={{color:'#64748b'}}/>
+                          </IconButton>
+                      </Box>
                   </Box>
 
                   <List disablePadding>
@@ -466,7 +488,60 @@ function App() {
           <DialogActions><Button onClick={() => setIsNewSpeakerDialogOpen(false)}>取消</Button><Button onClick={() => {if(activeSegmentIndex!==null && newSpeakerName) updateSpeaker(activeSegmentIndex, newSpeakerName); setIsNewSpeakerDialogOpen(false);}}>確認</Button></DialogActions>
       </Dialog>
 
-      {/* ★ 上傳與進度 Dialog ★ */}
+      {/* ★ 完整的下載選單 (內嵌式) ★ */}
+      <Menu 
+          anchorEl={downloadAnchor} 
+          open={Boolean(downloadAnchor)} 
+          onClose={() => setDownloadAnchor(null)}
+          PaperProps={{ sx: { bgcolor: '#1e293b', color: '#e2e8f0', border: '1px solid #334155', minWidth: 250 } }}
+      >
+          <Box sx={{ px: 2, py: 1, borderBottom: '1px solid #334155' }}>
+              <Typography variant="subtitle2" color="#94a3b8">
+                  匯出完整資料集 (Full Export)
+              </Typography>
+          </Box>
+
+          {/* 1. Golden Data (最重要) */}
+          <MenuItem onClick={() => handleDownloadFile('edited')} sx={{ py: 1.5 }}>
+              <ListItemIcon><CheckCircle fontSize="small" sx={{color:'#4ade80'}}/></ListItemIcon>
+              <ListItemText 
+                  primary="人工修正版 (Golden)" 
+                  secondary="Final Training Data" 
+                  primaryTypographyProps={{ fontWeight: 600, color: '#f8fafc' }}
+                  secondaryTypographyProps={{ fontSize: '0.7rem', color: '#4ade80' }} 
+              />
+          </MenuItem>
+
+          <Divider sx={{ my: 0.5, bgcolor: '#334155' }} />
+
+          {/* 2. Processed Data */}
+          <MenuItem onClick={() => handleDownloadFile('flagged')}>
+              <ListItemIcon><Warning fontSize="small" sx={{color:'#fbbf24'}}/></ListItemIcon>
+              <ListItemText primary="AI 標記版 (Flagged)" secondary="Processed + LLM QA" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+          </MenuItem>
+          <MenuItem onClick={() => handleDownloadFile('stitched')}>
+              <ListItemIcon><Cable fontSize="small" sx={{color:'#c084fc'}}/></ListItemIcon>
+              <ListItemText primary="自動縫合版 (Stitched)" secondary="Re-stitched Segments" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+          </MenuItem>
+          <MenuItem onClick={() => handleDownloadFile('aligned')}>
+              <ListItemIcon><AutoFixHigh fontSize="small" sx={{color:'#60a5fa'}}/></ListItemIcon>
+              <ListItemText primary="初步對齊版 (Aligned)" secondary="Whisper + Diarization" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+          </MenuItem>
+
+          <Divider sx={{ my: 0.5, bgcolor: '#334155' }} />
+
+          {/* 3. Raw Data */}
+          <MenuItem onClick={() => handleDownloadFile('diar')}>
+              <ListItemIcon><RecordVoiceOver fontSize="small" sx={{color:'#94a3b8'}}/></ListItemIcon>
+              <ListItemText primary="原始分者 (Raw Diar)" secondary="Speaker Timestamps Only" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
+          </MenuItem>
+          <MenuItem onClick={() => handleDownloadFile('whisper')}>
+              <ListItemIcon><GraphicEq fontSize="small" sx={{color:'#94a3b8'}}/></ListItemIcon>
+              <ListItemText primary="原始識別 (Raw ASR)" secondary="Relative Timestamps" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
+          </MenuItem>
+      </Menu>
+
+      {/* 上傳與進度 Dialog */}
       <Dialog 
           open={isUploadOpen} 
           onClose={() => !isUploading && setIsUploadOpen(false)}
@@ -478,7 +553,7 @@ function App() {
           </DialogTitle>
           
           <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {/* 修復標題被切掉：增加 mt: 1 */}
+              {/* 自動填入檔名 */}
               <Autocomplete
                   freeSolo
                   options={existingTesters || []}
@@ -496,7 +571,7 @@ function App() {
               />
 
               {!isUploading ? (
-                  // === 狀態 A: 等待上傳 (大按鈕) ===
+                  // 狀態 A: 等待上傳
                   <Button 
                       variant="outlined" 
                       component="label" 
@@ -504,17 +579,11 @@ function App() {
                       sx={{ 
                           height: 120, 
                           borderStyle: 'dashed', 
-                          borderWidth: 2,
+                          borderWidth: 2, 
                           borderColor: uploadFile ? '#38bdf8' : '#94a3b8',
                           bgcolor: uploadFile ? 'rgba(56, 189, 248, 0.05)' : 'transparent',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: 1,
-                          '&:hover': {
-                              borderWidth: 2,
-                              borderColor: '#38bdf8',
-                              bgcolor: 'rgba(56, 189, 248, 0.1)'
-                          }
+                          display: 'flex', flexDirection: 'column', gap: 1,
+                          '&:hover': { borderWidth: 2, borderColor: '#38bdf8', bgcolor: 'rgba(56, 189, 248, 0.1)' }
                       }}
                   >
                       {uploadFile ? (
@@ -530,74 +599,40 @@ function App() {
                               <Typography variant="caption" color="text.secondary">支援 .mp4, .wav</Typography>
                           </>
                       )}
-                        <input 
-                            type="file" 
-                            hidden 
-                            accept="video/*,audio/*" 
-                            onChange={(e) => {
-                                const file = e.target.files?.[0] || null;
-                                setUploadFile(file);
-                                
-                                // ★ 新增：自動將檔名填入案例名稱 (移除副檔名)
-                                if (file) {
-                                    const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-                                    setUploadCaseName(fileNameWithoutExt);
-                                }
-                            }} 
-                        />
+                      <input 
+                          type="file" hidden accept="video/*,audio/*" 
+                          onChange={(e) => {
+                              const file = e.target.files?.[0] || null;
+                              setUploadFile(file);
+                              if (file) {
+                                  const fileNameWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+                                  setUploadCaseName(fileNameWithoutExt);
+                              }
+                          }} 
+                      />
                   </Button>
               ) : (
-                  // === 狀態 B: 真實進度條 (Polling) ===
+                  // 狀態 B: 真實進度條
                   <Paper variant="outlined" sx={{ p: 3, bgcolor: '#f8fafc', borderColor: '#cbd5e1' }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, justifyContent: 'space-between' }}>
-                          <Typography variant="subtitle1" fontWeight="bold" color="#0f172a">
-                              {currentStep}
-                          </Typography>
-                          <Typography variant="h6" color="primary" fontWeight="bold">
-                              {Math.round(uploadProgress)}%
-                          </Typography>
+                          <Typography variant="subtitle1" fontWeight="bold" color="#0f172a">{currentStep}</Typography>
+                          <Typography variant="h6" color="primary" fontWeight="bold">{Math.round(uploadProgress)}%</Typography>
                       </Box>
-                      
                       <Box sx={{ width: '100%', mr: 1 }}>
                           <LinearProgress 
-                              variant="determinate" 
-                              value={uploadProgress} 
-                              sx={{ 
-                                  height: 10, 
-                                  borderRadius: 5,
-                                  bgcolor: '#e2e8f0',
-                                  '& .MuiLinearProgress-bar': {
-                                      borderRadius: 5,
-                                      bgcolor: '#3b82f6' 
-                                  }
-                              }}
+                              variant="determinate" value={uploadProgress} 
+                              sx={{ height: 10, borderRadius: 5, bgcolor: '#e2e8f0', '& .MuiLinearProgress-bar': { borderRadius: 5, bgcolor: '#3b82f6' } }}
                           />
                       </Box>
-                      
-                      <Typography variant="caption" sx={{ display:'block', mt: 1.5, color: '#64748b' }}>
-                          正在後端進行 AI 運算
-                      </Typography>
+                      <Typography variant="caption" sx={{ display:'block', mt: 1.5, color: '#64748b' }}>正在後端進行 AI 運算</Typography>
                   </Paper>
               )}
-
           </DialogContent>
           
           <DialogActions sx={{ px: 3, pb: 3 }}>
-              <Button onClick={() => setIsUploadOpen(false)} disabled={isUploading} size="large">
-                  取消
-              </Button>
-              
+              <Button onClick={() => setIsUploadOpen(false)} disabled={isUploading} size="large">取消</Button>
               {!isUploading && (
-                  <Button 
-                      onClick={handleUploadConfirm} 
-                      variant="contained" 
-                      size="large"
-                      disabled={!uploadFile || !uploadCaseName}
-                      startIcon={<PlayCircle />}
-                      sx={{ px: 4 }}
-                  >
-                      開始執行 Pipeline
-                  </Button>
+                  <Button onClick={handleUploadConfirm} variant="contained" size="large" disabled={!uploadFile || !uploadCaseName} startIcon={<PlayCircle />} sx={{ px: 4 }}>開始執行 Pipeline</Button>
               )}
           </DialogActions>
       </Dialog>

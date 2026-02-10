@@ -1,4 +1,5 @@
 import os
+import io
 import json
 import glob
 import shutil
@@ -8,6 +9,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
@@ -477,6 +479,43 @@ async def get_status(case_name: str):
     """前端透過輪詢 (Polling) 這個 API 來獲取進度"""
     status = file_manager.get_status(case_name)
     return status
+
+@app.get("/api/export/{case_name}/{dataset_type}")
+async def export_dataset(case_name: str, dataset_type: str):
+    """
+    匯出合併後的資料集
+    """
+    # 對應你的檔案後綴
+    suffix_map = {
+        "whisper": "_whisper.json", # Raw ASR (相對時間，僅供參考)
+        "diar": "_diar.json",       # Raw Diarization
+        "aligned": "_aligned.json", # 初步對齊
+        "stitched": "_stitched.json", # 斷句修復後
+        "flagged": "_flagged_for_human.json", # LLM 標記後
+        "edited": "_edited.json"    # 人工修正版 (黃金資料)
+    }
+    
+    suffix = suffix_map.get(dataset_type)
+    if not suffix:
+        raise HTTPException(status_code=400, detail="Unknown dataset type")
+
+    # 執行合併
+    merged_data = file_manager.merge_chunks(case_name, suffix)
+    
+    if not merged_data:
+        raise HTTPException(status_code=404, detail=f"No data found for {dataset_type}")
+
+    # 轉成 JSON String
+    json_str = json.dumps(merged_data, ensure_ascii=False, indent=2)
+    
+    # 下載檔名範例: 20250324_陈芮晞_FULL_edited.json
+    filename = f"{case_name}_FULL_{dataset_type}.json"
+    
+    return StreamingResponse(
+        io.BytesIO(json_str.encode("utf-8")),
+        media_type="application/json",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 if __name__ == "__main__":
     import uvicorn

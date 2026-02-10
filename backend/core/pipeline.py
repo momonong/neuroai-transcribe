@@ -9,9 +9,7 @@ from opencc import OpenCC
 
 from .config import config
 
-# ==========================================
-# 🔥 必備 Patch: 解決 PyTorch 2.6+ 權重載入錯誤 🔥
-# ==========================================
+
 try:
     # 強制覆寫 torch.load，預設 weights_only=False
     original_load = torch.load
@@ -195,8 +193,8 @@ class PipelinePhase2:
                 best_speaker = max(speaker_scores, key=speaker_scores.get) if speaker_scores else "Unknown"
                 aligned_data.append({
                     "id": f"chunk_{int(chunk_offset_sec)}_{idx}",
-                    "start": round(w_start + chunk_offset_sec, 2),
-                    "end": round(w_end + chunk_offset_sec, 2),
+                    "start": round(w_start + chunk_offset_sec, 3),
+                    "end": round(w_end + chunk_offset_sec, 3),
                     "speaker": best_speaker,
                     "text": w["text"].strip(),
                     "flag": "review_needed" if best_speaker == "Unknown" else "auto"
