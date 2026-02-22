@@ -120,6 +120,10 @@ export const useTranscript = () => {
     updateSegmentFull(index, { start: newRelativeStart });
   }, [updateSegmentFull]);
 
+  const updateSegmentEndTime = useCallback((index: number, newRelativeEnd: number) => {
+    updateSegmentFull(index, { end: newRelativeEnd });
+  }, [updateSegmentFull]);
+
   const updateSpeaker = useCallback((index: number, newSpeakerId: string) => {
     updateSegmentFull(index, { speaker: newSpeakerId });
   }, [updateSegmentFull]);
@@ -192,6 +196,7 @@ export const useTranscript = () => {
     
     updateText, 
     updateSegmentTime, 
+    updateSegmentEndTime, 
     updateSpeaker, 
     renameSpeaker, 
     save,

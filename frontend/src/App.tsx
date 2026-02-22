@@ -36,7 +36,7 @@ function App() {
     segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
     chunkTimepoints, fileType,
     hasUnsavedChanges, loading, error,
-    updateText, updateSegmentTime, updateSpeaker, renameSpeaker, save,
+    updateText, updateSegmentTime, updateSegmentEndTime, updateSpeaker, renameSpeaker, save,
     deleteSegment, addSegment, uploadVideo, existingTesters, fetchTesters,
     resolveFlag 
   } = useTranscript();
@@ -115,6 +115,13 @@ function App() {
     const newRelative = Math.max(0, currentAbs - videoOffset);
     updateSegmentTime(index, newRelative);
   }, [videoOffset, updateSegmentTime]);
+
+  const handleSyncEndTime = useCallback((index: number) => {
+    if (!videoRef.current) return;
+    const currentAbs = videoRef.current.currentTime;
+    const newRelative = Math.max(0, currentAbs - videoOffset);
+    updateSegmentEndTime(index, newRelative);
+  }, [videoOffset, updateSegmentEndTime]);
 
   const handleManualJump = () => {
     if (!videoRef.current || !jumpInput) return;
@@ -465,6 +472,7 @@ function App() {
                         isDoctor={(speakerMap[seg.speaker] || seg.speaker).includes('醫師')}
                         onTextChange={updateText}
                         onSyncTime={handleSyncTime}
+                        onSyncEndTime={handleSyncEndTime}
                         onJumpToTime={handleJumpToTime}
                         onSpeakerClick={handleSpeakerClick}
                         onDelete={deleteSegment}
