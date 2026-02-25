@@ -3,6 +3,7 @@ import io
 import json
 import glob
 import shutil
+import urllib.parse
 from datetime import datetime
 from typing import List, Dict, Optional, Any
 from pathlib import Path
@@ -510,11 +511,14 @@ async def export_dataset(case_name: str, dataset_type: str):
     
     # 下載檔名範例: 20250324_陈芮晞_FULL_edited.json
     filename = f"{case_name}_FULL_{dataset_type}.json"
+    encoded_filename = urllib.parse.quote(filename)
     
     return StreamingResponse(
         io.BytesIO(json_str.encode("utf-8")),
         media_type="application/json",
-        headers={"Content-Disposition": f"attachment; filename={filename}"}
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{encoded_filename}"
+        }
     )
 
 if __name__ == "__main__":

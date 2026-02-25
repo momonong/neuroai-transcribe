@@ -170,3 +170,7 @@ docker-compose down
 可以。  
 只要第一次 `docker-compose up --build` 成功執行過，且未刪除 Docker Image 或 Cache，  
 之後拔掉網路線，系統依然可以正常讀取本地的 `model_cache` 進行運作。
+
+```
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu129
+```
