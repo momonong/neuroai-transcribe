@@ -43,21 +43,25 @@
 **📁 專案結構**
 ```text
 NeuroAI-Transcribe/
-├── backend/                # 後端原始碼
-│   ├── core/
-│   │   └── workers/        # 確保 worker scripts (run_whisper.py, run_diar.py) 都在
+├── core/                   # [AI 核心] 辨識／轉寫邏輯（切音、Whisper、Pyannote、對齊、stitch、flag）
+│   ├── config.py
+│   ├── file_manager.py
+│   ├── run_pipeline.py
+│   ├── pipeline.py, split.py, stitch.py, flag.py, ai_engine.py, overall_pipeline.py
+│   └── requirements.txt    # Core 專用依賴（可選）
+├── backend/                # [編輯介面後端] API、上傳、存檔、狀態、匯出
 │   ├── main.py
-│   ├── requirements.txt
+│   ├── requirements.txt    # 僅 API/編輯介面依賴
 │   └── Dockerfile
 ├── frontend/               # 前端原始碼
 │   ├── src/
 │   ├── package.json
 │   └── Dockerfile
-├── model_cache/            # [重要] 預先下載好的 AI 模型
-│   ├── hub/                # HuggingFace 模型 (Pyannote, Whisper...)
-│   └── gemma...            # LLM 模型檔案 (.gguf)
-├── docker-compose.yml      # 部署設定檔
-└── .env                    # 環境變數設定 (含 API Token)
+├── data/                   # 案例資料（由程式建立）
+├── models/                 # 或 model_cache/：預先下載的 AI 模型
+├── requirements.txt        # 全專案依賴（backend + core）
+├── docker-compose.yml      # 部署時會掛載 core/ 並設定 PYTHONPATH=/app
+└── .env                    # 環境變數 (含 HF_TOKEN 等)
 ```
 ---
 
@@ -66,7 +70,7 @@ NeuroAI-Transcribe/
 
 - `frontend/node_modules`（Docker 會重新安裝）
 - `backend/venv`（Docker 內有獨立環境）
-- `backend/__pycache__`
+- `backend/__pycache__`、`core/__pycache__`
 - `.git`（除非需要在新電腦進行版控）
 
 ---
@@ -97,6 +101,30 @@ HF_TOKEN=hf_xxxxxx...
 ---
 
 ## 4. 啟動與安裝
+
+### 專案結構與依賴說明
+
+- **backend/**：編輯介面後端（FastAPI）。依賴見 `backend/requirements.txt`（不含 torch/whisper/pyannote）。
+- **core/**：AI 辨識／轉寫核心，位於專案根目錄。依賴見 `requirements.txt` 或 `core/requirements.txt`。
+- 執行時 **專案根目錄** 必須在 Python 路徑中，後端才能 `import core`：
+  - **Docker**：已設定 `PYTHONPATH=/app` 並掛載 `./core:/app/core`。
+  - **本機**：在專案根目錄執行，並設定 `PYTHONPATH=.`；或執行 `pip install -e .`（需有 `pyproject.toml`）。
+
+### 本機執行（不含 Docker）
+
+```bash
+cd path/to/neuroai-transcribe
+# 安裝完整依賴（backend + core）
+pip install -r requirements.txt
+
+# 方式 A：從專案根目錄設定 PYTHONPATH 後啟動後端
+set PYTHONPATH=.   # Windows
+# export PYTHONPATH=.  # Linux/macOS
+uvicorn backend.main:app --host 0.0.0.0 --port 8001
+
+# 方式 B：獨立執行 pipeline（例如上傳後由 API 觸發，或手動跑）
+python -m core.run_pipeline <video_path> --case <case_name>
+```
 
 ⚠️ **重要提示：第一次啟動需連網**  
 雖然本系統設計為可離線執行，但第一次部署時 Docker 需要：

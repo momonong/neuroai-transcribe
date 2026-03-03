@@ -1,5 +1,7 @@
 # 檔案管理系統優化報告
 
+> **說明**：`core/` 已移至專案根目錄（與 `backend/` 分離）。路徑與 API 以專案根為基準；檔案管理器使用 `case_name`、`get_case_dir`、`get_intermediate_dir`、`get_output_dir` 等。
+
 ## 問題分析
 
 原本的檔案管理存在以下問題：
