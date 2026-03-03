@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 
-# 從 backend/ 執行時，將專案根加入 path，才能 import core（core 在專案根 core/）
+# 從 backend/ 執行時，將專案根加入 path，才能 import shared（Production 映像僅含 backend + shared）
 _backend_dir = Path(__file__).resolve().parent
 _project_root = _backend_dir.parent
 if str(_project_root) not in sys.path:
@@ -21,7 +21,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core.file_manager import file_manager
+from shared.file_manager import file_manager
 
 # 不在此 import run_pipeline，改由子流程執行，避免 main 載入 torch/whisper 等 AI 依賴
 

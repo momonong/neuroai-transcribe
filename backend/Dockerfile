@@ -1,18 +1,18 @@
-# backend/Dockerfile
-# Build context: 專案根目錄 (docker-compose 指定 context: .)
-# 映像內含 backend + core，並安裝完整依賴以支援 API 與 pipeline
+# Backend Production：僅打包 backend + shared，不包含 core
+# build context 請用專案根目錄：docker-compose 設 context: ., dockerfile: backend/Dockerfile
 FROM python:3.10-slim
 
 WORKDIR /app
 
-# 先安裝依賴（專案根 requirements.txt 含 backend + core）
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# 依賴
+COPY backend/requirements.txt ./backend/
+RUN pip install --no-cache-dir -r backend/requirements.txt
 
-# 複製程式碼（執行時可用 volume 覆蓋以熱更新）
+# 程式碼（僅 backend 與 shared）
 COPY backend/ ./backend/
-COPY core/ ./core/
+COPY shared/ ./shared/
 
-# 後端工作目錄與啟動方式由 docker-compose 指定
-# working_dir: /app/backend, command: uvicorn main:app ...
-# 並設定 PYTHONPATH=/app 使 import core 可找到 /app/core
+ENV PYTHONPATH=/app
+WORKDIR /app/backend
+EXPOSE 8001
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8001"]

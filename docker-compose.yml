@@ -1,40 +1,30 @@
-version: '3.8'
-
+# docker push momonong/neuroai-backend:latest
+# docker push momonong/neuroai-frontend:latest
 services:
   backend:
-    build: 
+    build:
       context: .
       dockerfile: backend/Dockerfile
+    image: momonong/neuroai-backend:latest
     container_name: neuroai_backend
-    ports:
-      - "8001:8001"
-    environment:
-      # 讓 backend 能 import 專案根目錄的 core（AI 核心）
-      - PYTHONPATH=/app
+    expose:
+      - "8001"
     volumes:
-      - ./backend:/app/backend
-      - ./core:/app/core
       - ./data:/app/data
+    environment:
+      - PYTHONPATH=/app
+      - RUN_PIPELINE_AFTER_UPLOAD=false
     working_dir: /app/backend
-    command: python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    restart: unless-stopped
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+    image: momonong/neuroai-frontend:latest
     container_name: neuroai_frontend
     ports:
-      - "5173:5173"
-    volumes:
-      # 將本機的 frontend 資料夾掛載進去
-      - ./frontend:/app/frontend
-      # 忽略本機的 node_modules，使用容器內安裝的版本 (避免 Windows/Linux 衝突)
-      - /app/frontend/node_modules
-    working_dir: /app/frontend
-    environment:
-      # 在 Windows 上使用 Docker 時，開啟輪詢以確保檔案修改能觸發前端熱更新
-      - CHOKIDAR_USEPOLLING=true 
-    # Vite 必須加上 --host 才能讓容器外的瀏覽器連線
-    command: npm run dev -- --host 0.0.0.0 
+      - "55688:80"
     depends_on:
       - backend
+    restart: unless-stopped
