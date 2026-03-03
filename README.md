@@ -1,252 +1,158 @@
-# NeuroAI Clinical Transcription System
+# NeuroAI Transcribe
 
-A comprehensive AI-powered clinical audio transcription and annotation system designed for ASD (Autism Spectrum Disorder) diagnostic interviews. The system combines advanced speech recognition, speaker diarization, and intelligent post-processing to create accurate, reviewable transcripts for clinical use.
+A clinical interview speech transcription and editing system for use in ASD (autism spectrum disorder) diagnostic interviews and similar settings. It combines speech recognition, speaker diarization, and post-processing to produce reviewable, editable transcripts.
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
-### System Components
+The project uses a **decoupled architecture**: the **Web interface** (frontend + backend) is separate from the **AI transcription core** (`core/`).
+
+- **Docker images** include only the Web stack (Frontend + Backend + shared). They do not include GPU or heavy AI dependencies.
+- **AI pipeline** (Whisper, Pyannote, alignment, stitch, flag) lives in the project root under `core/`. It is run in a GPU-capable environment by the lab and is **not** bundled into Docker.
 
 ```
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │    │    Backend      │    │   AI Pipeline   │
-│   (React/TS)    │◄──►│   (FastAPI)     │◄──►│   (Whisper +    │
-│                 │    │                 │    │    Pyannote)    │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-         │                       │                       │
-         │                       │                       │
-         ▼                       ▼                       ▼
-┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Web Interface │    │   REST API      │    │   GPU Models    │
-│   - Video Player│    │   - File Mgmt   │    │   - Whisper     │
-│   - Text Editor │    │   - Processing  │    │   - Pyannote    │
-│   - Annotation  │    │   - Validation  │    │   - LLM (Gemma) │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│  Docker images (suitable for Docker Hub)                         │
+│  ┌─────────────┐         ┌─────────────┐                         │
+│  │  Frontend   │ --80--> │   Nginx     │  Static files +         │
+│  │  (React)    │         │   :80       │  proxy /api, /static    │
+│  └─────────────┘         └──────┬──────┘  to Backend             │
+│                                 │                                 │
+│                                 ▼                                 │
+│  ┌─────────────┐         ┌─────────────┐   ┌──────────┐          │
+│  │  Backend    │ <------ │   shared/   │   │  data/   │          │
+│  │  (FastAPI)  │         │ file_manager│   │ (volume) │          │
+│  └─────────────┘         └─────────────┘   └──────────┘          │
+└─────────────────────────────────────────────────────────────────┘
+
+Project root (not packaged into Docker)
+  core/           # AI pipeline: split, pipeline, stitch, flag, run_pipeline
+  backend/        # Backend source
+  frontend/       # Frontend source
+  shared/         # Path/file logic (shared with backend)
+  data/           # Cases and media (mounted as volume in Docker)
 ```
 
-## 🚀 Quick Start
+## Quick Start
 
-### Prerequisites
+### Requirements
 
-- **Hardware**: NVIDIA GPU (RTX 3060+ recommended)
-- **Software**: Docker, Docker Compose, Python 3.9+, Node.js 18+
-- **Models**: Hugging Face account with access to Pyannote models
+- Docker and Docker Compose
+- (Optional) To run the AI pipeline: Python 3.10+, NVIDIA GPU, Hugging Face account and Pyannote model access
 
-### Environment Setup
+### Using Docker (recommended)
 
-1. **Clone and configure environment**:
+1. **Clone and enter the project**
+   ```bash
+   git clone <repository-url>
+   cd neuroai-transcribe
+   ```
+
+2. **Build and start**
+   ```bash
+   docker-compose up --build -d
+   ```
+
+3. **Open the app**  
+   In your browser go to **http://localhost**  
+   (If the frontend port in `docker-compose.yml` is mapped as `55688:80`, use **http://localhost:55688** instead.)
+
+### Local development
+
+**Backend** (project root must be on `PYTHONPATH` so `shared` can be imported):
 ```bash
-git clone <repository-url>
-cd neuroai-transcription
-cp .env.example .env
+cd neuroai-transcribe
+pip install -r backend/requirements.txt
+# Windows PowerShell
+$env:PYTHONPATH = "."
+uvicorn backend.main:app --host 0.0.0.0 --port 8001
 ```
 
-2. **Configure `.env` file**:
-```env
-# Model Configuration
-MODEL_CACHE_DIR=D:/hf_models  # Adjust to your model storage path
-HF_TOKEN=your_huggingface_token_here
-
-# Docker Configuration
-HOST_LLM_PORT=8000
-HOST_BACKEND_PORT=8001
-```
-
-3. **Start the system**:
-```bash
-# Start all services
-docker-compose up -d
-
-# Or start individual services
-docker-compose up llm-server    # LLM server only
-docker-compose up backend       # Backend API only
-```
-
-### Manual Setup (Development)
-
-**Backend Setup**:
-```bash
-cd backend
-pip install -r requirements.txt
-python main.py  # Starts on port 8001
-```
-
-**Frontend Setup**:
+**Frontend**
 ```bash
 cd frontend
 npm install
-npm run dev     # Starts on port 5173
+npm run dev   # Dev server on port 5173; proxies /api and /static to 8001
 ```
 
-## 📁 Project Structure
-
-### Backend Architecture (`/backend`)
-
-```
-backend/
-├── main.py                 # FastAPI application entry point
-├── app.py                  # Streamlit annotation interface
-├── requirements.txt        # Python dependencies
-├── Dockerfile             # Container configuration
-├── core/                  # Core AI processing modules
-│   ├── ai_engine.py       # Main pipeline orchestrator
-│   ├── pipeline.py        # Whisper + Pyannote processing
-│   ├── split.py           # Audio segmentation
-│   ├── stitch.py          # Sentence reconstruction
-│   └── flag.py            # Quality assurance & flagging
-├── scripts/               # Processing scripts
-│   ├── transcribe.py      # Standalone transcription
-│   ├── diarization.py     # Speaker identification
-│   └── agent/             # AI agent modules
-└── tests/                 # Unit and integration tests
-```
-
-### Frontend Architecture (`/frontend`)
-
-```
-frontend/
-├── src/
-│   ├── App.tsx            # Main React application
-│   ├── main.tsx           # Application entry point
-│   ├── App.css            # Styling
-│   └── assets/            # Static resources
-├── package.json           # Node.js dependencies
-├── vite.config.ts         # Vite build configuration
-├── tsconfig.json          # TypeScript configuration
-└── public/                # Public assets
-```
-
-## 🔧 Core Features
-
-### AI Processing Pipeline
-
-1. **Audio Splitting** (`core/split.py`)
-   - Intelligent audio segmentation
-   - Configurable chunk sizes
-   - Metadata preservation
-
-2. **Speech Recognition** (`core/pipeline.py`)
-   - Whisper large-v3 model
-   - Chinese language optimization
-   - Word-level timestamps
-
-3. **Speaker Diarization** (`core/pipeline.py`)
-   - Pyannote 3.1 speaker identification
-   - Multi-speaker conversation handling
-   - Speaker embedding analysis
-
-4. **Intelligent Alignment** (`core/pipeline.py`)
-   - Text-to-speaker mapping
-   - Temporal overlap resolution
-   - Confidence scoring
-
-5. **Post-Processing** (`core/stitch.py`, `core/flag.py`)
-   - Sentence reconstruction
-   - Quality assurance flagging
-   - Anomaly detection
-
-### Web Interface Features
-
-- **Real-time Video Synchronization**: Frame-accurate playback control
-- **Interactive Text Editing**: Live transcript modification
-- **Speaker Management**: Dynamic speaker identification and renaming
-- **Quality Review**: Flagged segments for human verification
-- **Export Capabilities**: Multiple output formats for clinical use
-
-## 🛠️ API Endpoints
-
-### Core API Routes
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| `GET` | `/api/temp/chunks` | List available transcript chunks |
-| `GET` | `/api/temp/chunk/{filename}` | Retrieve specific chunk data |
-| `POST` | `/api/temp/save` | Save edited transcript |
-| `GET` | `/api/videos` | List available video files |
-
-### Data Flow
-
-```
-Audio/Video Input → Splitting → Whisper → Pyannote → Alignment → Stitching → Flagging → Human Review
-```
-
-## 🔬 Clinical Use Case
-
-### ASD Diagnostic Interview Processing
-
-The system is specifically designed for processing clinical conversations between:
-- **Clinicians** (醫師): Medical professionals conducting assessments
-- **Parents/Caregivers** (家長): Providing developmental history
-- **Children** (兒童): Direct interaction and behavioral observation
-
-### Key Clinical Features
-
-- **Medical Terminology Recognition**: Optimized for clinical vocabulary
-- **Behavioral Annotation**: Flags for attention, social interaction patterns
-- **Compliance Standards**: HIPAA-compliant local processing
-- **Quality Assurance**: Multi-level review system for accuracy
-
-## 🚀 Development
-
-### Adding New Features
-
-1. **Backend Extensions**: Add new processing modules in `/backend/core/`
-2. **Frontend Components**: Extend React components in `/frontend/src/`
-3. **API Routes**: Add endpoints in `/backend/main.py`
-
-### Testing
-
+**AI pipeline** (requires core dependencies; see root `requirements.txt` or `core/requirements.txt`):
 ```bash
-# Backend tests
-cd backend
-python -m pytest tests/
-
-# Frontend tests
-cd frontend
-npm test
+# Run from project root with project root on PYTHONPATH
+python -m core.run_pipeline <video_path> --case <case_name>
 ```
 
-### Performance Optimization
+## Project Structure
 
-- **GPU Memory Management**: Automatic VRAM cleanup between processing stages
-- **Batch Processing**: Configurable chunk sizes for large files
-- **Caching**: Model caching for faster subsequent runs
+```
+neuroai-transcribe/
+├── frontend/           # React + Vite frontend
+│   ├── src/
+│   ├── nginx.conf      # Production: SPA + proxy /api, /static
+│   ├── Dockerfile      # Multi-stage: Node build → Nginx serves static
+│   └── package.json
+├── backend/            # FastAPI backend (editing API)
+│   ├── main.py         # Entry point, API, static mounts
+│   ├── requirements.txt
+│   └── Dockerfile      # Copies only backend/ and shared/
+├── shared/             # Shared layer (paths and file logic)
+│   ├── __init__.py
+│   └── file_manager.py # Case dirs, status, merge chunks, find_video_files
+├── core/               # AI core (not in Docker image)
+│   ├── config.py
+│   ├── run_pipeline.py
+│   ├── pipeline.py, split.py, stitch.py, flag.py, ai_engine.py, overall_pipeline.py
+│   └── requirements.txt
+├── data/               # Cases and media (Docker volume → /app/data)
+├── docker-compose.yml # Two services: backend + frontend
+├── .dockerignore       # Excludes core/, frontend/, etc. from backend build
+└── README.md
+```
 
-## 📊 System Requirements
+## Features
 
-### Minimum Requirements
-- **GPU**: NVIDIA GTX 1660 (6GB VRAM)
-- **RAM**: 16GB system memory
-- **Storage**: 50GB for models and data
-- **CPU**: 8-core processor
+### Web interface (available with Docker deployment)
 
-### Recommended Requirements
-- **GPU**: NVIDIA RTX 4070+ (12GB+ VRAM)
-- **RAM**: 32GB system memory
-- **Storage**: 100GB NVMe SSD
-- **CPU**: 12+ core processor
+- List and select videos by case
+- Upload videos and create cases
+- Read, edit, and save transcript chunks
+- Progress polling (`/api/status/{case_name}`)
+- Export datasets (whisper, diar, aligned, stitched, flagged, edited)
+- Static video playback (`/static/`)
 
-## 🔒 Security & Privacy
+### AI pipeline (run in an environment that includes `core/`)
 
-- **Local Processing**: All audio processing occurs locally
-- **No Cloud Dependencies**: Complete offline operation capability
-- **Data Encryption**: Optional encryption for sensitive clinical data
-- **Access Control**: Role-based access for clinical teams
+- Audio splitting (`core/split.py`)
+- Whisper ASR + Pyannote diarization + alignment (`core/pipeline.py`)
+- Sentence stitching and quality flagging (`core/stitch.py`, `core/flag.py`)
+- One-shot pipeline: `core/run_pipeline.py` or `core/overall_pipeline.py`
 
-## 📝 License
+## API Summary
 
-This project is designed for clinical research and diagnostic applications. Please ensure compliance with local healthcare data regulations.
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/api/videos` | List videos (by case) |
+| GET | `/api/temp/chunks` | List transcript chunks (optional `?case=`) |
+| GET | `/api/temp/chunk/{filename}` | Get a single chunk |
+| POST | `/api/temp/save` | Save edited transcript |
+| POST | `/api/upload` | Upload video (requires `case_name`) |
+| GET | `/api/status/{case_name}` | Get processing progress |
+| GET | `/api/export/{case_name}/{dataset_type}` | Export dataset (e.g. edited, flagged) |
+| - | `/static/` | Static files (e.g. videos) |
 
-## 🤝 Contributing
+## Deployment and Pushing Images
 
-1. Fork the repository
-2. Create a feature branch
-3. Implement changes with tests
-4. Submit a pull request
+- Example image names: `momonong/neuroai-backend:latest`, `momonong/neuroai-frontend:latest` (editable in `docker-compose.yml`).
+- After building, push to Docker Hub:
+  ```bash
+  docker push momonong/neuroai-backend:latest
+  docker push momonong/neuroai-frontend:latest
+  ```
+- For full deployment steps and offline deployment, see **`docs/INSTRUCTION.md`**.
 
-## 📞 Support
+## Clinical Use
 
-For technical support or clinical implementation questions, please refer to the documentation or create an issue in the repository.
+This system is intended for transcribing and reviewing clinical interviews (e.g. clinician, parent, child). It is an assistive tool and must be used together with professional judgment. Ensure compliance with local healthcare and data protection regulations.
 
----
+## License and Support
 
-**Note**: This system requires appropriate clinical validation and should be used as a supportive tool in conjunction with professional medical judgment.
+- Use in accordance with the project license and clinical research requirements.
+- For technical issues, open an issue in the repository. For deployment details, see `docs/INSTRUCTION.md`.
