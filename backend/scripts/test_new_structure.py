@@ -5,12 +5,12 @@
 import sys
 import os
 
-# 確保正確的路徑設定
+# 確保專案根在 path，以便 import core
 script_dir = os.path.dirname(os.path.abspath(__file__))
 backend_dir = os.path.dirname(script_dir)
 project_root = os.path.dirname(backend_dir)
-
-sys.path.insert(0, backend_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 from core.config import config
 from core.file_manager import file_manager
@@ -21,15 +21,13 @@ def test_new_structure():
     
     # 1. 測試配置
     print("📋 配置測試:")
+    print(f"   Project Root: {config.project_root}")
     print(f"   Data Dir: {config.data_dir}")
-    print(f"   Temp Chunks: {config.temp_chunks_dir}")
     print(f"   DB Dir: {config.db_dir}")
-    print(f"   Text Dir: {config.text_dir}")
+    print(f"   Model Cache: {config.model_cache_dir}")
     
     # 2. 測試檔案管理器
     print("\n📁 檔案管理器測試:")
-    
-    # 測試案例目錄建立
     test_case = "20250120-test"
     case_dir = file_manager.get_case_dir(test_case)
     print(f"   案例目錄: {case_dir}")
@@ -37,14 +35,8 @@ def test_new_structure():
     # 測試影片搜尋
     print("\n🎥 影片檔案搜尋:")
     videos = file_manager.find_video_files()
-    for video in videos[:3]:  # 只顯示前3個
+    for video in videos[:3]:
         print(f"   - {video['name']} ({video['case_name']})")
-    
-    # 測試案例清單
-    print("\n📋 案例清單:")
-    cases = file_manager.get_case_list()
-    for case in cases[:3]:  # 只顯示前3個
-        print(f"   - {case['name']}: {case['config'].get('status', 'unknown')}")
     
     print("\n✅ 測試完成!")
 

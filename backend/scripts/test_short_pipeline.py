@@ -6,12 +6,12 @@ import sys
 import os
 from pathlib import Path
 
-# 確保正確的路徑設定
+# 確保專案根在 path，以便 import core
 script_dir = os.path.dirname(os.path.abspath(__file__))
 backend_dir = os.path.dirname(script_dir)
 project_root = os.path.dirname(backend_dir)
-
-sys.path.insert(0, backend_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 def test_with_existing_chunks():
     """使用現有的 chunk 檔案測試後續流程"""

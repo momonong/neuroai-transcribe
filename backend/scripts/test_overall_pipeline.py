@@ -6,12 +6,12 @@ import sys
 import os
 from pathlib import Path
 
-# 確保正確的路徑設定
+# 確保專案根在 path，以便 import core（core 位於專案根 core/）
 script_dir = os.path.dirname(os.path.abspath(__file__))
 backend_dir = os.path.dirname(script_dir)
 project_root = os.path.dirname(backend_dir)
-
-sys.path.insert(0, backend_dir)
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
 
 def find_test_video():
     """尋找可用的測試影片"""

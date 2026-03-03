@@ -1,4 +1,5 @@
 import os
+import sys
 import io
 import json
 import glob
@@ -8,15 +9,21 @@ from datetime import datetime
 from typing import List, Dict, Optional, Any
 from pathlib import Path
 
+# 從 backend/ 執行時，將專案根加入 path，才能 import core（core 在專案根 core/）
+_backend_dir = Path(__file__).resolve().parent
+_project_root = _backend_dir.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
+
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from core.config import config
 from core.file_manager import file_manager
-from core.run_pipeline import run_pipeline
+
+# 不在此 import run_pipeline，改由子流程執行，避免 main 載入 torch/whisper 等 AI 依賴
 
 app = FastAPI()
 
@@ -40,6 +47,18 @@ os.makedirs(DATA_DIR, exist_ok=True)
 print(f"🚀 Server started.")
 print(f"📂 Project Root: {PROJECT_ROOT}")
 print(f"📂 Data Directory: {DATA_DIR}")
+
+
+def _run_pipeline_in_subprocess(video_path: str, case_name: str) -> None:
+    """在子流程執行 core pipeline，避免 main 載入 torch/whisper。供 background_tasks 呼叫。"""
+    import subprocess
+    env = os.environ.copy()
+    env["PYTHONPATH"] = str(PROJECT_ROOT)
+    subprocess.run(
+        [sys.executable, "-m", "core.run_pipeline", video_path, "--case", case_name],
+        cwd=str(PROJECT_ROOT),
+        env=env,
+    )
 
 # CORS 設定
 app.add_middleware(
@@ -465,9 +484,8 @@ async def upload_video_endpoint(
         with open(save_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
             
-        # 2. ★ 關鍵：不要用 await run_pipeline，改用 add_task
-        # 這樣 API 會立刻回傳 "OK"，不會讓前端 timeout
-        background_tasks.add_task(run_pipeline, save_path, case_name)
+        # 2. 在背景用子流程執行 pipeline，main 不載入 core.run_pipeline（不帶入 torch/whisper）
+        background_tasks.add_task(_run_pipeline_in_subprocess, save_path, case_name)
         
         return {"status": "processing_started", "case_name": case_name, "message": "Pipeline started in background"}
 

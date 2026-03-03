@@ -3,18 +3,20 @@ version: '3.8'
 services:
   backend:
     build: 
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: neuroai_backend
     ports:
       - "8001:8001"
+    environment:
+      # 讓 backend 能 import 專案根目錄的 core（AI 核心）
+      - PYTHONPATH=/app
     volumes:
-      # 將本機的 backend 資料夾掛載到容器內，支援熱更新 (--reload)
       - ./backend:/app/backend
-      # 將本機的 data 資料夾掛載到容器的上一層，確保後端能正確讀取到 ../data
+      - ./core:/app/core
       - ./data:/app/data
     working_dir: /app/backend
-    command: uvicorn main:app --host 0.0.0.0 --port 8001 --reload
+    command: python -m uvicorn main:app --host 0.0.0.0 --port 8001 --reload
 
   frontend:
     build:
