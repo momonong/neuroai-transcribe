@@ -361,7 +361,7 @@ function App() {
                           if (parts.length >= 4) {
                               const idx = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th"];
                               const num = parseInt(parts[1]);
-                              const numStr = num <= 10 ? idx[num] : num;
+                              const numStr = (num >= 1 && num <= 10) ? idx[num - 1] : num;
                               
                               chunkIndex = `Segment ${numStr}`;
                               
@@ -443,7 +443,7 @@ function App() {
                               const parts = selectedChunk.split('/').pop()?.split('_') || [];
                               const idx = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th"];
                               const num = parseInt(parts[1]);
-                              const numStr = num <= 10 ? idx[num] : num;
+                              const numStr = (num >= 1 && num <= 10) ? idx[num - 1] : num;
                               if (parts.length >= 2) return `Edit: Segment ${numStr}`;
                               return "Edit content";
                           })()}
