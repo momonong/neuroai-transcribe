@@ -31,7 +31,7 @@ export const DownloadMenu = ({ selectedCase }: DownloadMenuProps) => {
 
     return (
         <>
-            <Tooltip title={selectedCase ? "下載合併資料集" : "請先選擇案例"}>
+            <Tooltip title={selectedCase ? "Download merged dataset" : "Please select a case first"}>
                 <span>
                     <IconButton 
                         onClick={handleOpen} 
@@ -63,7 +63,7 @@ export const DownloadMenu = ({ selectedCase }: DownloadMenuProps) => {
             >
                 <Box sx={{ px: 2, py: 1, borderBottom: '1px solid #334155' }}>
                     <Typography variant="subtitle2" color="#94a3b8">
-                        匯出完整資料集 (Full Export)
+                        Export full dataset (Full Export)
                     </Typography>
                 </Box>
 
@@ -71,7 +71,7 @@ export const DownloadMenu = ({ selectedCase }: DownloadMenuProps) => {
                 <MenuItem onClick={() => handleDownload('edited')} sx={{ py: 1.5 }}>
                     <ListItemIcon><CheckCircle fontSize="small" sx={{color:'#4ade80'}}/></ListItemIcon>
                     <ListItemText 
-                        primary="人工修正版 (Golden)" 
+                        primary="Human-corrected (Golden)" 
                         secondary="Final Training Data" 
                         primaryTypographyProps={{ fontWeight: 600, color: '#f8fafc' }}
                         secondaryTypographyProps={{ fontSize: '0.7rem', color: '#4ade80' }} 
@@ -83,15 +83,15 @@ export const DownloadMenu = ({ selectedCase }: DownloadMenuProps) => {
                 {/* 2. Processed Data */}
                 <MenuItem onClick={() => handleDownload('flagged')}>
                     <ListItemIcon><Warning fontSize="small" sx={{color:'#fbbf24'}}/></ListItemIcon>
-                    <ListItemText primary="AI 標記版 (Flagged)" secondary="Processed + LLM QA" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+                    <ListItemText primary="AI-flagged (Flagged)" secondary="Processed + LLM QA" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
                 </MenuItem>
                 <MenuItem onClick={() => handleDownload('stitched')}>
                     <ListItemIcon><Cable fontSize="small" sx={{color:'#c084fc'}}/></ListItemIcon>
-                    <ListItemText primary="自動縫合版 (Stitched)" secondary="Re-stitched Segments" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+                    <ListItemText primary="Auto-stitched (Stitched)" secondary="Re-stitched Segments" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
                 </MenuItem>
                 <MenuItem onClick={() => handleDownload('aligned')}>
                     <ListItemIcon><AutoFixHigh fontSize="small" sx={{color:'#60a5fa'}}/></ListItemIcon>
-                    <ListItemText primary="初步對齊版 (Aligned)" secondary="Whisper + Diarization" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+                    <ListItemText primary="Aligned (Aligned)" secondary="Whisper + Diarization" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
                 </MenuItem>
 
                 <Divider sx={{ my: 0.5, bgcolor: '#334155' }} />
@@ -99,11 +99,11 @@ export const DownloadMenu = ({ selectedCase }: DownloadMenuProps) => {
                 {/* 3. Raw Data */}
                 <MenuItem onClick={() => handleDownload('diar')}>
                     <ListItemIcon><RecordVoiceOver fontSize="small" sx={{color:'#94a3b8'}}/></ListItemIcon>
-                    <ListItemText primary="原始分者 (Raw Diar)" secondary="Speaker Timestamps Only" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
+                    <ListItemText primary="Raw diarization (Raw Diar)" secondary="Speaker Timestamps Only" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
                 </MenuItem>
                 <MenuItem onClick={() => handleDownload('whisper')}>
                     <ListItemIcon><GraphicEq fontSize="small" sx={{color:'#94a3b8'}}/></ListItemIcon>
-                    <ListItemText primary="原始識別 (Raw ASR)" secondary="Relative Timestamps" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
+                    <ListItemText primary="Raw ASR (Raw ASR)" secondary="Relative Timestamps" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
                 </MenuItem>
             </Menu>
         </>

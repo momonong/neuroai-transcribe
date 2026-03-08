@@ -30,9 +30,9 @@ export const ChunkTimepoints: React.FC<Props> = ({
 
   const getFileTypeLabel = () => {
     switch (fileType) {
-      case 'flagged': return '需人工檢查';
-      case 'edited': return '已編輯';
-      default: return '原始版本';
+      case 'flagged': return 'Needs review';
+      case 'edited': return 'Edited';
+      default: return 'Original';
     }
   };
 
@@ -45,7 +45,7 @@ export const ChunkTimepoints: React.FC<Props> = ({
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Typography variant="subtitle2" sx={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 1 }}>
           <Schedule fontSize="small" />
-          時間點快速跳轉
+          Quick jump to timepoints
         </Typography>
         <Chip 
           label={getFileTypeLabel()}
@@ -60,7 +60,7 @@ export const ChunkTimepoints: React.FC<Props> = ({
       
       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
         {chunkTimepoints.map((chunk, index) => {
-          const quarterLabel = `第 ${index + 1} 段`;
+          const quarterLabel = `Segment ${index + 1}`;
           const timeLabel = `${formatTime(chunk.start_sec)} - ${formatTime(chunk.end_sec)}`;
           const durationLabel = `(${formatTime(chunk.duration_sec)})`;
           
@@ -105,7 +105,7 @@ export const ChunkTimepoints: React.FC<Props> = ({
       {fileType === 'flagged' && (
         <Box sx={{ mt: 2, p: 1.5, bgcolor: '#fbbf24', borderRadius: 1 }}>
           <Typography variant="caption" sx={{ color: '#92400e', fontWeight: 'bold' }}>
-            ⚠️ 此檔案包含需要人工檢查的片段，請仔細核對標記為需檢查的內容
+            ⚠️ This file contains segments that need manual review. Please check the flagged content carefully.
           </Typography>
         </Box>
       )}

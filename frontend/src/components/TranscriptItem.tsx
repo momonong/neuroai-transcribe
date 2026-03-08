@@ -120,12 +120,12 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
         />
 
         <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 0.25, flexShrink: 0 }}>
-          <Tooltip title="刪除此段落">
+          <Tooltip title="Delete this segment">
             <IconButton onClick={() => onDelete(index)} size="small" sx={{ color: '#94a3b8', '&:hover': { color: '#ef4444', bgcolor: '#fef2f2' } }}>
               <Delete fontSize="small" />
             </IconButton>
           </Tooltip>
-          <Tooltip title="在此段後新增段落">
+          <Tooltip title="Add segment after this">
             <IconButton onClick={() => onAddAfter(index)} size="small" sx={{ color: '#94a3b8', '&:hover': { color: '#0ea5e9', bgcolor: '#f0f9ff' } }}>
               <Add fontSize="small" />
             </IconButton>
@@ -150,8 +150,8 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
       >
         {/* 開始時間 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, py: 0.75 }}>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, minWidth: 28, lineHeight: 1 }}>開始</Typography>
-          <Tooltip title="跳轉到此時間點並播放">
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, minWidth: 28, lineHeight: 1 }}>Start</Typography>
+          <Tooltip title="Jump to this time and play">
             <IconButton onClick={() => onJumpToTime(absStart)} size="small" sx={{ color: '#0ea5e9', p: 0.4 }}>
               <PlayArrow sx={{ fontSize: 18 }} />
             </IconButton>
@@ -159,7 +159,7 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
           <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#475569', fontWeight: 600, minWidth: 52, lineHeight: 1 }}>
             {formatTimestamp(absStart)}
           </Typography>
-          <Tooltip title="以目前播放位置設為開始時間">
+          <Tooltip title="Set start time to current playback position">
             <IconButton onClick={() => onSyncTime(index)} size="small" sx={{ color: '#64748b', p: 0.4 }}>
               <Sync sx={{ fontSize: 16 }} />
             </IconButton>
@@ -170,8 +170,8 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
 
         {/* 結束時間 */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, py: 0.75 }}>
-          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, minWidth: 28, lineHeight: 1 }}>結束</Typography>
-          <Tooltip title="跳轉到此時間點並播放">
+          <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 600, minWidth: 28, lineHeight: 1 }}>End</Typography>
+          <Tooltip title="Jump to this time and play">
             <IconButton onClick={() => onJumpToTime(absEnd)} size="small" sx={{ color: '#0ea5e9', p: 0.4 }}>
               <PlayArrow sx={{ fontSize: 18 }} />
             </IconButton>
@@ -179,7 +179,7 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
           <Typography variant="caption" sx={{ fontFamily: 'monospace', color: '#475569', fontWeight: 600, minWidth: 52, lineHeight: 1 }}>
             {formatTimestamp(absEnd)}
           </Typography>
-          <Tooltip title="以目前播放位置設為結束時間">
+          <Tooltip title="Set end time to current playback position">
             <IconButton onClick={() => onSyncEndTime(index)} size="small" sx={{ color: '#64748b', p: 0.4 }}>
               <Sync sx={{ fontSize: 16 }} />
             </IconButton>
@@ -205,9 +205,9 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
         >
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flex: 1, minWidth: 0 }}>
             <AutoFixHigh sx={{ color: '#ea580c', fontSize: 20 }} />
-            <Tooltip title={segment.review_reason || "AI 偵測到潛在問題"} arrow placement="top">
+            <Tooltip title={segment.review_reason || "AI detected potential issue"} arrow placement="top">
               <Typography variant="body2" sx={{ color: '#9a3412', fontWeight: 600, cursor: 'help' }}>
-                AI 建議：
+                AI suggestion:
               </Typography>
             </Tooltip>
             <Typography variant="body2" sx={{ color: '#1e293b' }}>
@@ -223,7 +223,7 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
               onClick={() => onResolveFlag(index, 'ignore')}
               sx={{ textTransform: 'none', color: '#64748b' }}
             >
-              忽略
+              Ignore
             </Button>
             <Button
               size="small"
@@ -232,7 +232,7 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
               onClick={() => onResolveFlag(index, 'accept')}
               sx={{ textTransform: 'none', boxShadow: 'none', bgcolor: '#f97316', '&:hover': { bgcolor: '#ea580c' } }}
             >
-              採用
+              Accept
             </Button>
           </Box>
         </Paper>

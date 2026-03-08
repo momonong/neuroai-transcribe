@@ -143,7 +143,7 @@ function App() {
   const handleSaveWrapper = async () => {
       try {
           await save();
-          setToast({ open: true, msg: '儲存成功！', type: 'success' });
+          setToast({ open: true, msg: 'Saved successfully!', type: 'success' });
 
           if (selectedCase && selectedChunk) {
               const res = await axios.get(`/api/temp/chunks?case=${selectedCase}`);
@@ -160,7 +160,7 @@ function App() {
           }
       } catch(e) {
           console.error(e);
-          setToast({ open: true, msg: '儲存失敗', type: 'error' });
+          setToast({ open: true, msg: 'Save failed', type: 'error' });
       }
   };
 
@@ -212,7 +212,7 @@ function App() {
 
                   if (progress >= 100) {
                       clearInterval(pollInterval);
-                      setToast({ open: true, msg: 'Pipeline 執行成功！', type: 'success' });
+                      setToast({ open: true, msg: 'Pipeline completed successfully!', type: 'success' });
                       
                       setTimeout(() => {
                           setIsUploadOpen(false);
@@ -225,7 +225,7 @@ function App() {
                   else if (step === "Error" || progress === -1) {
                       clearInterval(pollInterval);
                       setIsUploading(false);
-                      setToast({ open: true, msg: `處理失敗: ${message}`, type: 'error' });
+                      setToast({ open: true, msg: `Processing failed: ${message}`, type: 'error' });
                   }
               } catch (err) {
                   console.warn("Polling error:", err);
@@ -234,7 +234,7 @@ function App() {
 
       } catch(e) {
           setIsUploading(false);
-          setToast({ open: true, msg: '上傳失敗，請檢查後端日誌', type: 'error' });
+          setToast({ open: true, msg: 'Upload failed. Please check backend logs.', type: 'error' });
       }
   };
 
@@ -285,7 +285,7 @@ function App() {
                   ) : (
                       <Box sx={{ p: 4, color: '#64748b', textAlign: 'center', display:'flex', flexDirection:'column', alignItems:'center', gap:1 }}>
                           <Movie sx={{ fontSize: 48, opacity: 0.5 }}/>
-                          <Typography variant="body2">請從下方選擇影片</Typography>
+                          <Typography variant="body2">Please select a video below</Typography>
                       </Box>
                   )}
               </Box>
@@ -301,7 +301,7 @@ function App() {
                             displayEmpty
                             sx={{ color: 'white', bgcolor: '#0f172a', '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }}
                         >
-                            <MenuItem value="" disabled>-- 切換案例 (影片) --</MenuItem>
+                            <MenuItem value="" disabled>-- Switch case (video) --</MenuItem>
                             {availableVideos.map(v => (
                                 <MenuItem key={v.path} value={v.path}>{v.name}</MenuItem>
                             ))}
@@ -309,7 +309,7 @@ function App() {
                     </Grid>
                     <Grid size={12} display="flex" gap={1} mt={1}>
                         <TextField 
-                            fullWidth size="small" placeholder="跳轉 (例如 1:20)" value={jumpInput} onChange={e=>setJumpInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleManualJump()}
+                            fullWidth size="small" placeholder="Jump to (e.g. 1:20)" value={jumpInput} onChange={e=>setJumpInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleManualJump()}
                             sx={{ bgcolor: '#0f172a', input:{color:'white'}, fieldset:{borderColor:'#475569'} }}
                             InputProps={{
                                 startAdornment: <InputAdornment position="start"><Timer sx={{color:'#64748b', fontSize:18}}/></InputAdornment>,
@@ -329,7 +329,7 @@ function App() {
                   <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Typography variant="subtitle2" sx={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 1 }}>
                           <FolderOpen fontSize="small"/> 
-                          {selectedCase ? '段落列表 (Chunks)' : '請先選擇影片'}
+                          {selectedCase ? 'Segment list (Chunks)' : 'Please select a video first'}
                       </Typography>
                       
                       {/* ★ 下載按鈕與重新整理 ★ */}
@@ -346,7 +346,7 @@ function App() {
                   <List disablePadding>
                       {selectedCase && caseChunks.length === 0 && (
                           <Box sx={{textAlign:'center', mt:4, color:'#64748b'}}>
-                              <Typography variant="body2">此影片沒有可用的段落檔案</Typography>
+                              <Typography variant="body2">No segment files available for this video</Typography>
                           </Box>
                       )}
 
@@ -359,11 +359,11 @@ function App() {
                           let chunkIndex = "";
 
                           if (parts.length >= 4) {
-                              const idx = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+                              const idx = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th"];
                               const num = parseInt(parts[1]);
                               const numStr = num <= 10 ? idx[num] : num;
                               
-                              chunkIndex = `第 ${numStr} 段`;
+                              chunkIndex = `Segment ${numStr}`;
                               
                               const start = formatMs(parseInt(parts[2]));
                               const end = formatMs(parseInt(parts[3]));
@@ -404,9 +404,9 @@ function App() {
                                                       {displayName}
                                                   </Typography>
                                                   
-                                                  {isFlagged && <Chip label="需人工審核" size="small" color="warning" sx={{height:20, fontSize:'0.7rem'}} icon={<Warning style={{fontSize:12}}/>} />}
-                                                  {isEdited && <Chip label="已編輯" size="small" color="success" sx={{height:20, fontSize:'0.7rem'}} icon={<CheckCircle style={{fontSize:12}}/>} />}
-                                                  {isOriginal && <Chip label="原始檔" size="small" sx={{height:20, fontSize:'0.7rem', bgcolor:'transparent', border:'1px solid #64748b', color:'#94a3b8'}} />}
+                                                  {isFlagged && <Chip label="Needs review" size="small" color="warning" sx={{height:20, fontSize:'0.7rem'}} icon={<Warning style={{fontSize:12}}/>} />}
+                                                  {isEdited && <Chip label="Edited" size="small" color="success" sx={{height:20, fontSize:'0.7rem'}} icon={<CheckCircle style={{fontSize:12}}/>} />}
+                                                  {isOriginal && <Chip label="Original" size="small" sx={{height:20, fontSize:'0.7rem', bgcolor:'transparent', border:'1px solid #64748b', color:'#94a3b8'}} />}
                                               </Box>
                                           } 
                                           secondary={
@@ -434,18 +434,18 @@ function App() {
                   <Box sx={{ mb: 4, pb: 2, borderBottom: '1px solid #e2e8f0' }}>
                       <Breadcrumbs aria-label="breadcrumb" sx={{mb: 1, fontSize: '0.85rem'}}>
                            <Typography color="text.secondary">{selectedCase}</Typography>
-                           <Typography color="text.primary">編輯中</Typography>
+                           <Typography color="text.primary">Editing</Typography>
                       </Breadcrumbs>
                       
                       <Typography variant="h5" color="#1e293b" fontWeight={600} display="flex" alignItems="center" gap={1}>
                           <Edit fontSize="medium" color="primary"/>
                           {(() => {
                               const parts = selectedChunk.split('/').pop()?.split('_') || [];
-                              const idx = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+                              const idx = ["1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th"];
                               const num = parseInt(parts[1]);
                               const numStr = num <= 10 ? idx[num] : num;
-                              if (parts.length >= 2) return `編輯：第 ${numStr} 段`;
-                              return "編輯內容";
+                              if (parts.length >= 2) return `Edit: Segment ${numStr}`;
+                              return "Edit content";
                           })()}
                       </Typography>
                       
@@ -456,8 +456,8 @@ function App() {
               ) : (
                   <Box sx={{ textAlign: 'center', mt: 15, color: '#94a3b8' }}>
                       <Description sx={{ fontSize: 80, opacity: 0.1, mb: 2 }} />
-                      <Typography variant="h6">請選擇段落</Typography>
-                      <Typography variant="body2">請點擊左側列表中的段落以開始編輯。</Typography>
+                      <Typography variant="h6">Please select a segment</Typography>
+                      <Typography variant="body2">Click a segment in the left list to start editing.</Typography>
                   </Box>
               )}
 
@@ -487,13 +487,13 @@ function App() {
       {/* Dialogs */}
       <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={() => setAnchorEl(null)}>
           {allSpeakers.map(spk => <MenuItem key={spk} onClick={() => handleSelectExistingSpeaker(spk)}>{speakerMap[spk] || spk}</MenuItem>)}
-          <Divider /><MenuItem onClick={() => { setAnchorEl(null); setIsNewSpeakerDialogOpen(true); }} sx={{color:'blue'}}><Add/> 新增...</MenuItem>
+          <Divider /><MenuItem onClick={() => { setAnchorEl(null); setIsNewSpeakerDialogOpen(true); }} sx={{color:'blue'}}><Add/> Add new...</MenuItem>
       </Menu>
 
       <Dialog open={isNewSpeakerDialogOpen} onClose={() => setIsNewSpeakerDialogOpen(false)}>
-          <DialogTitle>新增語者</DialogTitle>
-          <DialogContent><TextField autoFocus margin="dense" label="名稱" fullWidth value={newSpeakerName} onChange={(e) => setNewSpeakerName(e.target.value)} /></DialogContent>
-          <DialogActions><Button onClick={() => setIsNewSpeakerDialogOpen(false)}>取消</Button><Button onClick={() => {if(activeSegmentIndex!==null && newSpeakerName) updateSpeaker(activeSegmentIndex, newSpeakerName); setIsNewSpeakerDialogOpen(false);}}>確認</Button></DialogActions>
+          <DialogTitle>Add speaker</DialogTitle>
+          <DialogContent><TextField autoFocus margin="dense" label="Name" fullWidth value={newSpeakerName} onChange={(e) => setNewSpeakerName(e.target.value)} /></DialogContent>
+          <DialogActions><Button onClick={() => setIsNewSpeakerDialogOpen(false)}>Cancel</Button><Button onClick={() => {if(activeSegmentIndex!==null && newSpeakerName) updateSpeaker(activeSegmentIndex, newSpeakerName); setIsNewSpeakerDialogOpen(false);}}>Confirm</Button></DialogActions>
       </Dialog>
 
       {/* ★ 完整的下載選單 (內嵌式) ★ */}
@@ -505,7 +505,7 @@ function App() {
       >
           <Box sx={{ px: 2, py: 1, borderBottom: '1px solid #334155' }}>
               <Typography variant="subtitle2" color="#94a3b8">
-                  匯出完整資料集 (Full Export)
+                  Export full dataset (Full Export)
               </Typography>
           </Box>
 
@@ -513,7 +513,7 @@ function App() {
           <MenuItem onClick={() => handleDownloadFile('edited')} sx={{ py: 1.5 }}>
               <ListItemIcon><CheckCircle fontSize="small" sx={{color:'#4ade80'}}/></ListItemIcon>
               <ListItemText 
-                  primary="人工修正版 (Golden)" 
+                  primary="Human-corrected (Golden)" 
                   secondary="Final Training Data" 
                   primaryTypographyProps={{ fontWeight: 600, color: '#f8fafc' }}
                   secondaryTypographyProps={{ fontSize: '0.7rem', color: '#4ade80' }} 
@@ -525,15 +525,15 @@ function App() {
           {/* 2. Processed Data */}
           <MenuItem onClick={() => handleDownloadFile('flagged')}>
               <ListItemIcon><Warning fontSize="small" sx={{color:'#fbbf24'}}/></ListItemIcon>
-              <ListItemText primary="AI 標記版 (Flagged)" secondary="Processed + LLM QA" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+              <ListItemText primary="AI-flagged (Flagged)" secondary="Processed + LLM QA" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
           </MenuItem>
           <MenuItem onClick={() => handleDownloadFile('stitched')}>
               <ListItemIcon><Cable fontSize="small" sx={{color:'#c084fc'}}/></ListItemIcon>
-              <ListItemText primary="自動縫合版 (Stitched)" secondary="Re-stitched Segments" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+              <ListItemText primary="Auto-stitched (Stitched)" secondary="Re-stitched Segments" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
           </MenuItem>
           <MenuItem onClick={() => handleDownloadFile('aligned')}>
               <ListItemIcon><AutoFixHigh fontSize="small" sx={{color:'#60a5fa'}}/></ListItemIcon>
-              <ListItemText primary="初步對齊版 (Aligned)" secondary="Whisper + Diarization" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
+              <ListItemText primary="Aligned (Aligned)" secondary="Whisper + Diarization" secondaryTypographyProps={{fontSize:'0.7rem', color:'#94a3b8'}} />
           </MenuItem>
 
           <Divider sx={{ my: 0.5, bgcolor: '#334155' }} />
@@ -541,11 +541,11 @@ function App() {
           {/* 3. Raw Data */}
           <MenuItem onClick={() => handleDownloadFile('diar')}>
               <ListItemIcon><RecordVoiceOver fontSize="small" sx={{color:'#94a3b8'}}/></ListItemIcon>
-              <ListItemText primary="原始分者 (Raw Diar)" secondary="Speaker Timestamps Only" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
+              <ListItemText primary="Raw diarization (Raw Diar)" secondary="Speaker Timestamps Only" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
           </MenuItem>
           <MenuItem onClick={() => handleDownloadFile('whisper')}>
               <ListItemIcon><GraphicEq fontSize="small" sx={{color:'#94a3b8'}}/></ListItemIcon>
-              <ListItemText primary="原始識別 (Raw ASR)" secondary="Relative Timestamps" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
+              <ListItemText primary="Raw ASR (Raw ASR)" secondary="Relative Timestamps" secondaryTypographyProps={{fontSize:'0.7rem', color:'#64748b'}} />
           </MenuItem>
       </Menu>
 
@@ -557,7 +557,7 @@ function App() {
           fullWidth
       >
           <DialogTitle sx={{ pb: 1 }}>
-              上傳新案例與執行 Pipeline
+              Upload new case and run Pipeline
           </DialogTitle>
           
           <DialogContent sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
@@ -570,7 +570,7 @@ function App() {
                   renderInput={(params) => (
                       <TextField 
                           {...params} 
-                          label="案例名稱 (Case Name)" 
+                          label="Case name (Case Name)" 
                           fullWidth 
                           variant="outlined"
                           sx={{ mt: 1 }} 
@@ -603,8 +603,8 @@ function App() {
                       ) : (
                           <>
                               <Add fontSize="large" sx={{ opacity: 0.5 }}/>
-                              <Typography variant="h6" color="text.secondary">選擇影片檔案</Typography>
-                              <Typography variant="caption" color="text.secondary">支援 .mp4, .wav</Typography>
+                              <Typography variant="h6" color="text.secondary">Select video file</Typography>
+                              <Typography variant="caption" color="text.secondary">Supports .mp4, .wav</Typography>
                           </>
                       )}
                       <input 
@@ -632,15 +632,15 @@ function App() {
                               sx={{ height: 10, borderRadius: 5, bgcolor: '#e2e8f0', '& .MuiLinearProgress-bar': { borderRadius: 5, bgcolor: '#3b82f6' } }}
                           />
                       </Box>
-                      <Typography variant="caption" sx={{ display:'block', mt: 1.5, color: '#64748b' }}>正在後端進行 AI 運算</Typography>
+                      <Typography variant="caption" sx={{ display:'block', mt: 1.5, color: '#64748b' }}>Running AI processing on backend</Typography>
                   </Paper>
               )}
           </DialogContent>
           
           <DialogActions sx={{ px: 3, pb: 3 }}>
-              <Button onClick={() => setIsUploadOpen(false)} disabled={isUploading} size="large">取消</Button>
+              <Button onClick={() => setIsUploadOpen(false)} disabled={isUploading} size="large">Cancel</Button>
               {!isUploading && (
-                  <Button onClick={handleUploadConfirm} variant="contained" size="large" disabled={!uploadFile || !uploadCaseName} startIcon={<PlayCircle />} sx={{ px: 4 }}>開始執行 Pipeline</Button>
+                  <Button onClick={handleUploadConfirm} variant="contained" size="large" disabled={!uploadFile || !uploadCaseName} startIcon={<PlayCircle />} sx={{ px: 4 }}>Run Pipeline</Button>
               )}
           </DialogActions>
       </Dialog>

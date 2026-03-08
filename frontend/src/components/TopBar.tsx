@@ -32,7 +32,7 @@ export const TopBar: React.FC<Props> = ({
                       <input 
                           value={speakerMap[spk] || ''} 
                           onChange={(e) => onRenameSpeaker(spk, e.target.value)} 
-                          placeholder="別名" 
+                          placeholder="Alias" 
                           style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.85rem', width: 60, outline: 'none', fontWeight: 'bold' }} 
                       />
                   </Box>
@@ -47,7 +47,7 @@ export const TopBar: React.FC<Props> = ({
             onClick={onUploadOpen}
             sx={{ borderColor: '#475569', color: '#94a3b8', '&:hover': { borderColor: '#38bdf8', color: '#38bdf8' } }}
           >
-              上傳影片
+              Upload video
           </Button>
           <Button 
             variant="contained" 
