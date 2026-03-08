@@ -8,7 +8,7 @@ import json
 import shutil
 from typing import List, Optional
 
-from .file_manager import file_manager
+from shared.file_manager import file_manager
 from .split import SmartAudioSplitter
 from .pipeline import PipelinePhase2
 from .stitch import run_stitching_logic

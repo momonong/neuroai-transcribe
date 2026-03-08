@@ -18,7 +18,7 @@ class SmartAudioSplitter:
             case_name: 案例名稱，用於決定輸出位置
         """
         if output_dir is None:
-            from core.file_manager import file_manager
+            from shared.file_manager import file_manager
             if case_name:
                 self.output_dir = str(file_manager.get_intermediate_dir(case_name))
             else:

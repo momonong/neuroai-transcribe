@@ -7,7 +7,7 @@ from typing import Optional, List, Dict
 # 執行時需將專案根目錄加入 PYTHONPATH（或 pip install -e .），以便 import core
 
 from core.config import config
-from core.file_manager import file_manager
+from shared.file_manager import file_manager
 from core.split import SmartAudioSplitter
 from core.pipeline import PipelinePhase2
 from core.stitch import run_stitching_logic

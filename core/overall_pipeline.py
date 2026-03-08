@@ -28,7 +28,7 @@ warnings.filterwarnings("ignore", message=".*TensorFloat-32.*")
 warnings.filterwarnings("ignore", message=".*degrees of freedom.*")
 
 from core.config import config
-from core.file_manager import file_manager
+from shared.file_manager import file_manager
 from core.split import SmartAudioSplitter
 from core.pipeline import PipelinePhase2
 from core.stitch import run_stitching_logic
