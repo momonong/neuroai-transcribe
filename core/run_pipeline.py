@@ -2,6 +2,12 @@ import os
 import json
 import sys
 from pathlib import Path
+
+# Add project root to sys.path to allow importing core and shared modules
+root_dir = Path(__file__).resolve().parent.parent
+if str(root_dir) not in sys.path:
+    sys.path.insert(0, str(root_dir))
+
 from typing import Optional, List, Dict
 
 # 執行時需將專案根目錄加入 PYTHONPATH（或 pip install -e .），以便 import core

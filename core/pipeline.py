@@ -1,5 +1,7 @@
 import os
+import sys
 import json
+import subprocess
 import torch
 import gc
 import time
@@ -34,8 +36,7 @@ try:
 except Exception as e:
     print(f"⚠️ Warning: Patching torch.load failed: {e}")
 
-# 正常 import
-from faster_whisper import WhisperModel
+# 正常 import（Whisper 改由 core.scripts.whisper_one_chunk 子行程執行，此處不再載入）
 from pyannote.audio import Pipeline
 
 class PipelinePhase2:
@@ -47,76 +48,68 @@ class PipelinePhase2:
         self.cc = OpenCC('s2twp')
 
     def _clear_gpu(self):
-        """強制清理 GPU 資源"""
-        gc.collect()
-        if torch.cuda.is_available():
-            torch.cuda.empty_cache()
-            torch.cuda.ipc_collect()
-        time.sleep(1)
+        """強制清理 GPU 資源；若清理時發生錯誤僅記錄不拋出，避免 process 直接結束。"""
+        try:
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+            time.sleep(0.5)
+        except Exception as e:
+            print(f"   ⚠️ _clear_gpu 時發生錯誤（已忽略）: {e}", flush=True)
 
     def run_whisper_batch(self, tasks: List[Dict]):
-        print(f"\n🎧 [Batch Whisper] Starting batch for {len(tasks)} files...", flush=True)
+        print(f"\n🎧 [Batch Whisper] Starting batch for {len(tasks)} files (one subprocess per chunk)...", flush=True)
         
         todo_tasks = [t for t in tasks if not os.path.exists(t['json'])]
         if not todo_tasks:
             print("   ⏩ All Whisper tasks completed. Skipping.", flush=True)
             return
 
-        try:
-            print(f"   🔄 Loading Whisper Model ({config.whisper_model})...", flush=True)
-            self.whisper_model = WhisperModel(
-                config.whisper_model, 
-                device=self.device, 
-                compute_type=self.compute_type,
-                download_root=config.model_cache_dir,
-                cpu_threads=4,
-                num_workers=1
-            )
+        project_root = str(config.project_root)
+        cmd_base = [sys.executable, "-m", "core.scripts.whisper_one_chunk"]
+        timeout_sec = 600  # 單一 chunk 最長 10 分鐘
 
-            for idx, task in enumerate(todo_tasks):
-                wav_path = task['wav']
-                json_path = task['json']
-                print(f"   [{idx+1}/{len(todo_tasks)}] Transcribing: {os.path.basename(wav_path)}", flush=True)
-                
-                segments, info = self.whisper_model.transcribe(
-                    wav_path,
-                    beam_size=config.whisper_beam_size,
-                    word_timestamps=True,
-                    vad_filter=True
-                )
-                
-                results = []
-                for seg in list(segments): 
-                    text_traditional = self.cc.convert(seg.text.strip())
-                    words_list = []
-                    if seg.words:
-                        for w in seg.words:
-                            words_list.append({
-                                "start": w.start, 
-                                "end": w.end, 
-                                "word": self.cc.convert(w.word)
-                            })
-
-                    results.append({
-                        "start": seg.start,
-                        "end": seg.end,
-                        "text": text_traditional,
-                        "words": words_list
-                    })
-                
-                with open(json_path, 'w', encoding='utf-8') as f:
-                    json.dump(results, f, ensure_ascii=False, indent=2)
-                
-                self._clear_gpu()
-
-        except Exception as e:
-            print(f"   ❌ Batch Whisper Failed: {e}", flush=True)
-        finally:
-            if self.whisper_model:
-                del self.whisper_model
-                self.whisper_model = None
-            self._clear_gpu()
-            print("   🧹 Whisper Model Unloaded.", flush=True)
+        for idx, task in enumerate(todo_tasks):
+            wav_path = task["wav"]
+            json_path = task["json"]
+            print(f"   [{idx+1}/{len(todo_tasks)}] Transcribing: {os.path.basename(wav_path)}", flush=True)
+            success = False
+            for attempt in range(2):
+                try:
+                    r = subprocess.run(
+                        cmd_base + [wav_path, json_path],
+                        cwd=project_root,
+                        env=os.environ.copy(),
+                        timeout=timeout_sec,
+                        capture_output=True,
+                        text=True,
+                    )
+                    if r.returncode == 0:
+                        if r.stderr:
+                            print(r.stderr, flush=True)
+                        success = True
+                        break
+                    # 子行程可能在寫完 json 後於收尾時崩潰（如 Windows 3221226505），若輸出已存在則視為成功
+                    if os.path.exists(json_path) and os.path.getsize(json_path) > 0:
+                        try:
+                            with open(json_path, encoding="utf-8") as f:
+                                json.load(f)
+                            success = True
+                            print(f"   ✓ 輸出已寫入（子行程收尾異常，視為成功）", flush=True)
+                            break
+                        except Exception:
+                            pass
+                    print(f"   ⚠️ 子行程 exit code {r.returncode}", flush=True)
+                    if r.stderr:
+                        print(r.stderr, flush=True)
+                except subprocess.TimeoutExpired:
+                    print(f"   ⚠️ 逾時 ({timeout_sec}s)，重試 {attempt+1}/2", flush=True)
+                except Exception as e:
+                    print(f"   ⚠️ 執行失敗: {e}", flush=True)
+            if not success:
+                print(f"   ❌ 跳過（無法完成）: {os.path.basename(wav_path)}", flush=True)
+        print("   🧹 Batch Whisper 結束.", flush=True)
 
     def run_diarization_batch(self, tasks: List[Dict]):
         print(f"\n🗣️ [Batch Diarization] Starting batch for {len(tasks)} files...", flush=True)
@@ -152,17 +145,22 @@ class PipelinePhase2:
                 with open(json_path, 'w', encoding='utf-8') as f:
                     json.dump(diar_segments, f, ensure_ascii=False, indent=2)
                 
-                self._clear_gpu()
+                is_last = (idx == len(todo_tasks) - 1)
+                if not is_last:
+                    self._clear_gpu()
 
         except Exception as e:
             print(f"   ❌ Batch Diarization Failed: {e}", flush=True)
             raise e
         finally:
-            if self.diarization_pipeline:
-                del self.diarization_pipeline
-                self.diarization_pipeline = None
-            self._clear_gpu()
-            print("   🧹 Pyannote Model Unloaded.", flush=True)
+            try:
+                if self.diarization_pipeline:
+                    del self.diarization_pipeline
+                    self.diarization_pipeline = None
+                self._clear_gpu()
+                print("   🧹 Pyannote Model Unloaded.", flush=True)
+            except Exception as e:
+                print(f"   ⚠️ Diarization 收尾清理時發生錯誤（已忽略）: {e}", flush=True)
 
     def run_alignment(self, whisper_json, diar_json, final_output_path, chunk_offset_sec=0):
         try:

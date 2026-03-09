@@ -27,13 +27,13 @@ export const TopBar: React.FC<Props> = ({
           <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', maxWidth: '600px', alignItems: 'center', '::-webkit-scrollbar': { height: 4 } }}>
               <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold' }}>ALIAS:</Typography>
               {allSpeakers.map(spk => (
-                  <Box key={spk} sx={{ display: 'flex', alignItems: 'center', bgcolor: '#334155', borderRadius: 8, px: 1.5, py: 0.5, border: '1px solid #475569' }}>
-                      <Typography variant="caption" sx={{ color: '#94a3b8', mr: 1 }}>{spk}</Typography>
+                  <Box key={spk} sx={{ display: 'flex', alignItems: 'center', bgcolor: '#334155', borderRadius: 8, px: 2, py: 0.75, border: '1px solid #475569', minWidth: 0 }}>
+                      <Typography variant="caption" sx={{ color: '#94a3b8', mr: 1.5, flexShrink: 0 }}>{spk}</Typography>
                       <input 
                           value={speakerMap[spk] || ''} 
                           onChange={(e) => onRenameSpeaker(spk, e.target.value)} 
                           placeholder="Alias" 
-                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.85rem', width: 60, outline: 'none', fontWeight: 'bold' }} 
+                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.85rem', minWidth: 88, width: 88, outline: 'none', fontWeight: 'bold', boxSizing: 'border-box' }} 
                       />
                   </Box>
               ))}
