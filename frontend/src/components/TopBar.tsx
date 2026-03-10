@@ -17,30 +17,57 @@ export const TopBar: React.FC<Props> = ({
 }) => {
   return (
     <Paper square elevation={0} sx={{ height: 60, px: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: '#1e293b', borderBottom: '1px solid #334155', flexShrink: 0 }}>
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Dashboard sx={{ color: '#38bdf8' }} />
-          <Typography variant="h6" fontWeight="bold" sx={{ color: '#f8fafc' }}>NeuroAI Editor</Typography>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flex: 1, minWidth: 0 }}>
+          <Dashboard sx={{ color: '#38bdf8', flexShrink: 0 }} />
+          <Typography variant="h6" fontWeight="bold" sx={{ color: '#f8fafc', flexShrink: 0 }}>NeuroAI Editor</Typography>
           
-          <Divider orientation="vertical" flexItem sx={{ bgcolor: '#475569', mx: 2 }} />
+          <Divider orientation="vertical" flexItem sx={{ bgcolor: '#475569', mx: 2, flexShrink: 0 }} />
           
-          {/* Alias 編輯區 */}
-          <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', maxWidth: '600px', alignItems: 'center', '::-webkit-scrollbar': { height: 4 } }}>
-              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold' }}>ALIAS:</Typography>
+          {/* Alias 編輯區：佔滿剩餘寬度並橫向捲動，右側留白避免最後一個被切 */}
+          <Box sx={{ display: 'flex', gap: 2, overflowX: 'auto', alignItems: 'center', py: 1, pl: 0.5, pr: 1, flex: 1, minWidth: 0, '::-webkit-scrollbar': { height: 6 } }}>
+              <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 'bold', flexShrink: 0 }}>ALIAS:</Typography>
               {allSpeakers.map(spk => (
-                  <Box key={spk} sx={{ display: 'flex', alignItems: 'center', bgcolor: '#334155', borderRadius: 8, px: 2, py: 0.75, border: '1px solid #475569', minWidth: 0 }}>
+                  <Box
+                      key={spk}
+                      sx={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          bgcolor: '#334155',
+                          borderRadius: 8,
+                          pl: 2,
+                          pr: 2,
+                          py: 0.75,
+                          border: '1px solid #475569',
+                          flexShrink: 0,
+                          overflow: 'visible',
+                          minWidth: 'fit-content',
+                      }}
+                  >
                       <Typography variant="caption" sx={{ color: '#94a3b8', mr: 1.5, flexShrink: 0 }}>{spk}</Typography>
-                      <input 
-                          value={speakerMap[spk] || ''} 
-                          onChange={(e) => onRenameSpeaker(spk, e.target.value)} 
-                          placeholder="Alias" 
-                          style={{ background: 'transparent', border: 'none', color: '#fff', fontSize: '0.85rem', minWidth: 88, width: 88, outline: 'none', fontWeight: 'bold', boxSizing: 'border-box' }} 
+                      <input
+                          value={speakerMap[spk] || ''}
+                          onChange={(e) => onRenameSpeaker(spk, e.target.value)}
+                          placeholder="Alias"
+                          style={{
+                              background: 'transparent',
+                              border: 'none',
+                              color: '#fff',
+                              fontSize: '0.85rem',
+                              minWidth: 88,
+                              width: 88,
+                              outline: 'none',
+                              fontWeight: 'bold',
+                              boxSizing: 'border-box',
+                              padding: '2px 4px',
+                          }}
                       />
                   </Box>
               ))}
+              <Box sx={{ minWidth: 8, flexShrink: 0 }} />
           </Box>
       </Box>
 
-      <Box sx={{ display: 'flex', gap: 2 }}>
+      <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
           <Button 
             variant="outlined" 
             startIcon={<CloudUpload />} 
