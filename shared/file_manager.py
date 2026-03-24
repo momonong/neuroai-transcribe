@@ -40,6 +40,40 @@ class FileManager:
         output_dir.mkdir(parents=True, exist_ok=True)
         return output_dir / filename
 
+    def infer_case_name_from_video_path(self, video_path: str) -> Optional[str]:
+        """
+        若影片路徑位於 data/<case_name>/source/<檔名>，回傳 case_name。
+        用於未指定 --case 時仍將輸出寫入預期的案例資料夾。
+        """
+        try:
+            resolved = Path(video_path).resolve()
+            data_resolved = self.data_dir.resolve()
+            rel = resolved.relative_to(data_resolved)
+            parts = rel.parts
+            if len(parts) >= 3 and parts[1] == "source":
+                return parts[0]
+        except (ValueError, OSError):
+            pass
+        return None
+
+    def clear_intermediate(self, case_name: str) -> int:
+        """刪除該案 intermediate 內所有檔案（保留目錄）。回傳刪除的檔案數。"""
+        inter = self.get_intermediate_dir(case_name)
+        if not inter.is_dir():
+            return 0
+        n = 0
+        for f in inter.iterdir():
+            try:
+                if f.is_file():
+                    f.unlink()
+                    n += 1
+                elif f.is_dir():
+                    shutil.rmtree(f)
+                    n += 1
+            except OSError as e:
+                print(f"⚠️ 無法刪除 {f}: {e}")
+        return n
+
     def create_case(self, video_path: str, case_name: Optional[str] = None) -> str:
         video_path_obj = Path(video_path)
         if case_name is None:

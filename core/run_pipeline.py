@@ -23,9 +23,25 @@ class NeuroAIPipeline:
     def __init__(self):
         self.processor = PipelinePhase2()
 
-    def run(self, video_path: str, case_name: Optional[str] = None) -> Optional[str]:
+    def run(
+        self,
+        video_path: str,
+        case_name: Optional[str] = None,
+        *,
+        force_reprocess: bool = False,
+    ) -> Optional[str]:
+        if case_name is None:
+            inferred = file_manager.infer_case_name_from_video_path(video_path)
+            if inferred:
+                case_name = inferred
+                print(f" [Pipeline] 由路徑推斷案例名稱: {case_name} (data/.../source/...)")
+
         case_name = file_manager.create_case(video_path, case_name)
         print(f" [Pipeline] Start: {case_name}")
+
+        if force_reprocess:
+            n = file_manager.clear_intermediate(case_name)
+            print(f" [Pipeline] --force：已清空 intermediate（{n} 個項目）")
         
         file_manager.save_status(case_name, "Start", 0, "Initializing...")
 
@@ -133,18 +149,34 @@ class NeuroAIPipeline:
 
         return final_results
 
-def run_pipeline(video_path: str, case_name: Optional[str] = None):
+def run_pipeline(
+    video_path: str,
+    case_name: Optional[str] = None,
+    *,
+    force_reprocess: bool = False,
+):
     pipeline = NeuroAIPipeline()
-    return pipeline.run(video_path, case_name)
+    return pipeline.run(video_path, case_name, force_reprocess=force_reprocess)
 
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("video_path")
-    parser.add_argument("--case", default=None)
+    parser = argparse.ArgumentParser(
+        description="轉錄流程：輸出寫入 data/<case>/。若影片在 data/<case>/source/ 下且未指定 --case，會自動使用該資料夾名稱。"
+    )
+    parser.add_argument("video_path", help="影片或音訊路徑")
+    parser.add_argument(
+        "--case",
+        default=None,
+        help="案例名稱（對應 data/<case>/）。省略且路徑為 data/某案/source/檔名 時會自動推斷",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="清空該案 intermediate 後重跑（避免沿用舊 whisper/stitch 結果）",
+    )
     args = parser.parse_args()
 
-    if run_pipeline(args.video_path, args.case):
+    if run_pipeline(args.video_path, args.case, force_reprocess=args.force):
         print("\n✅ Success!")
     else:
         print("\n❌ Failed (Try running again for resume)")
