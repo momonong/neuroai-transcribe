@@ -130,7 +130,7 @@ flowchart LR
 | 腳本 | 用途 |
 |------|------|
 | `core/scripts/data/batch_run_pipeline.py` | 掃描 `data/` 下子資料夾；若**尚無** `intermediate` 目錄則對該案呼叫 `run_pipeline`。注意：有 `intermediate` 會整案跳過（與手動續跑策略不同）。 |
-| `core/scripts/evaluate/` | `python -m core.scripts.evaluate --case <name>`：intermediate 稽核、可選與 `edited.json` 的 GT 比對。詳見 `docs/evaluate.md`。 |
+| `core/scripts/evaluate/` | `python -m core.scripts.evaluate --case <name>` 稽核；`python -m core.scripts.evaluate.insights --case <name>` 產生併句前後對照表與 Markdown。詳見 `docs/evaluate.md`。 |
 
 ---
 

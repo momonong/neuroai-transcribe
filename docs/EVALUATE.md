@@ -29,6 +29,18 @@ python -m core.scripts.evaluate --case test --json data/test/output/pipeline_aud
 python -m core.scripts.evaluate --case test --ground-truth data/test/edited.json
 ```
 
+### 洞見報告（併句前後對照）
+
+在 `audit` 之上彙總**對 GT 的總表**、**分 chunk 字元保留率／遺漏 id**、**自動敘述與建議方向**，並可匯出 Markdown：
+
+```bash
+python -m core.scripts.evaluate.insights --case test
+python -m core.scripts.evaluate.insights --case test --markdown data/test/output/insights.md
+python -m core.scripts.evaluate.insights --case test --json data/test/output/insights.json
+```
+
+參數與 `audit` 相同邏輯：`--ground-truth`、`--no-ground-truth`；`--quiet-md` 僅寫檔、減少終端輸出。
+
 ### 選用依賴
 
 - **jiwer**：安裝後才會計算以「字元當作 word」的 **CER** 及插入 / 刪除 / 替換次數。  
@@ -91,6 +103,7 @@ python -m core.scripts.evaluate --case test --ground-truth data/test/edited.json
 |------|------|
 | `core/scripts/evaluate/__main__.py` | `python -m core.scripts.evaluate` 入口 |
 | `core/scripts/evaluate/audit.py` | CLI、掃描案例、`audit_case` |
+| `core/scripts/evaluate/insights.py` | 洞見報告：總表、chunk 表、Markdown／JSON |
 | `core/scripts/evaluate/metrics_lib.py` | 時間軸、ID 覆蓋、GT 正規化與 CER 等純函數 |
 
 ## 解讀提示
