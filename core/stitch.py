@@ -1,129 +1,90 @@
-import json
-import difflib
-import time
-from typing import List
-from openai import OpenAI, APITimeoutError
-import instructor
-from pydantic import BaseModel, Field
-import os
+from typing import Any, Dict, List, Optional
 
 from .config import config
 
-# --- Agent 輸出結構 ---
-class VerifiedSentence(BaseModel):
-    text: str = Field(..., description="The cleaned, merged sentence.")
-    source_ids: List[str] = Field(..., description="IDs of the raw segments used.")
 
-class DatasetEntry(BaseModel):
-    sentences: List[VerifiedSentence]
+def _safe_float(value: Any) -> Optional[float]:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
-def check_hallucination(original_text: str, rewritten_text: str) -> float:
-    return difflib.SequenceMatcher(None, original_text, rewritten_text).ratio()
 
-# --- 初始化 ---
-client = OpenAI(
-    base_url=config.llm_api_url, 
-    api_key=config.openai_api_key,
-    timeout=180.0
-)
-agent = instructor.patch(client, mode=instructor.Mode.JSON)
-
-def process_batch_safe(batch_segments):
-    input_text = "\n".join([f"[ID {s['id']}] {s['text']}" for s in batch_segments])
-
-    system_prompt = """
-    You are a Data Archivist creating a high-quality dataset for NeuroAI research.
-    Your task is to merge fragmented speech segments into complete sentences.
-    Rules: Verbatim Accuracy, Minimal Edits, Add Punctuation.
+def aligned_to_stitch_shape(aligned: List[dict]) -> List[dict]:
     """
-    
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            resp = agent.chat.completions.create(
-                model="gemma-2-9b-it",
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": f"Raw Data:\n{input_text}"}
-                ],
-                response_model=DatasetEntry,
-                temperature=0.0,
-                max_retries=2
-            )
-            return resp
-            
-        except APITimeoutError:
-            print(f"   ⚠️ Timeout (Attempt {attempt+1}/{max_retries}). Retrying...", end="\r", flush=True)
-            time.sleep(2)
-        except Exception as e:
-            print(f"   ⚠️ Stitch Agent Error (Attempt {attempt+1}): {e}")
-            time.sleep(1)
-            
-    return None
+    將 alignment 段落轉成與 stitch 輸出相同欄位，供 Flag / transcript 沿用。
+    一對一對應，不做任何併句。
+    """
+    final_results: List[dict] = []
+    for idx, row in enumerate(aligned):
+        sid = row.get("id")
+        ids = [str(sid)] if sid is not None else []
+        final_results.append(
+            {
+                "start": row.get("start"),
+                "end": row.get("end"),
+                "speaker": row.get("speaker", "Unknown"),
+                "text": row.get("text") or "",
+                "source_ids": ids,
+                "verification_score": 1.0,
+                "status": "NoStitch_Aligned",
+                "sentence_id": idx,
+            }
+        )
+    return final_results
+
+
+def _build_merged_item(run: List[Dict[str, Any]], sentence_id: int) -> Dict[str, Any]:
+    first = run[0]
+    last = run[-1]
+    source_ids = [str(seg.get("id")) for seg in run if seg.get("id") is not None]
+    merged_text = "".join(seg.get("text") or "" for seg in run)
+    status = "RuleStitch_Merged" if len(run) > 1 else "RuleStitch_Single"
+    return {
+        "start": first.get("start"),
+        "end": last.get("end"),
+        "speaker": first.get("speaker", "Unknown"),
+        "text": merged_text,
+        "source_ids": source_ids,
+        "verification_score": 1.0,
+        "status": status,
+        "sentence_id": sentence_id,
+    }
+
+
+def merge_aligned_segments(aligned: List[dict], *, max_gap_sec: float = 1.5) -> List[dict]:
+    if not aligned:
+        return []
+
+    merged: List[Dict[str, Any]] = []
+    current_run: List[Dict[str, Any]] = [aligned[0]]
+
+    for next_seg in aligned[1:]:
+        prev_seg = current_run[-1]
+        prev_speaker = str(prev_seg.get("speaker"))
+        next_speaker = str(next_seg.get("speaker"))
+        prev_end = _safe_float(prev_seg.get("end"))
+        next_start = _safe_float(next_seg.get("start"))
+
+        can_merge = False
+        if prev_speaker == next_speaker and prev_end is not None and next_start is not None:
+            gap_sec = next_start - prev_end
+            can_merge = gap_sec <= max_gap_sec
+
+        if can_merge:
+            current_run.append(next_seg)
+        else:
+            merged.append(_build_merged_item(current_run, sentence_id=len(merged)))
+            current_run = [next_seg]
+
+    merged.append(_build_merged_item(current_run, sentence_id=len(merged)))
+    return merged
+
 
 def run_stitching_logic(raw_data: List[dict]):
-    final_results = []
-    WINDOW_SIZE = 5
-    
-    print(f"🛡️ Starting Stitching Pipeline (Total: {len(raw_data)} segments)...")
-    total_batches = (len(raw_data) + WINDOW_SIZE - 1) // WINDOW_SIZE
-    
-    for i in range(0, len(raw_data), WINDOW_SIZE):
-        batch = raw_data[i : i + WINDOW_SIZE]
-        batch_map = {seg['id']: seg for seg in batch}
-        current_batch_num = (i // WINDOW_SIZE) + 1
-        print(f"   Processing Batch {current_batch_num}/{total_batches}...", end="", flush=True)
-
-        result = process_batch_safe(batch)
-        
-        if result:
-            print(f" Done. ({len(result.sentences)} sents)", flush=True)
-            for sent in result.sentences:
-                valid_ids = [bid for bid in sent.source_ids if bid in batch_map]
-                if not valid_ids: continue
-                
-                original_text_combined = "".join([batch_map[bid]['text'] for bid in valid_ids])
-                similarity = check_hallucination(original_text_combined, sent.text)
-                len_ratio = len(sent.text) / (len(original_text_combined) + 1)
-                is_risky = (similarity < 0.6) or (len_ratio > 1.5) or (len_ratio < 0.5)
-
-                start_time = batch_map[valid_ids[0]]['start']
-                end_time = batch_map[valid_ids[-1]]['end']
-                speaker = batch_map[valid_ids[0]]['speaker']
-
-                final_item = {
-                    "start": start_time,
-                    "end": end_time,
-                    "speaker": speaker,
-                    "text": sent.text,
-                    "source_ids": valid_ids,
-                    "verification_score": round(similarity, 2),
-                    "status": "Verified",
-                    "sentence_id": len(final_results)
-                }
-
-                if is_risky:
-                    final_item['text'] = original_text_combined
-                    final_item['status'] = "Rejected_Raw_Kept"
-
-                final_results.append(final_item)
-        else:
-            print(f" Failed. Using Raw Fallback.", flush=True)
-            for item in batch:
-                item['verification_score'] = 1.0
-                item['status'] = "Raw_Fallback"
-                item['sentence_id'] = len(final_results)
-                final_item = {
-                    "start": item['start'],
-                    "end": item['end'],
-                    "speaker": item['speaker'],
-                    "text": item['text'],
-                    "source_ids": [item['id']],
-                    "verification_score": 1.0,
-                    "status": "Raw_Fallback",
-                    "sentence_id": len(final_results)
-                }
-                final_results.append(final_item)
-
-    print("\n✅ Stitching complete.")
+    print(f"🛡️ Starting Rule-based Stitch (Total: {len(raw_data)} segments)...")
+    final_results = merge_aligned_segments(
+        raw_data, max_gap_sec=config.stitch_merge_max_gap_sec
+    )
+    print(f"✅ Rule-based Stitch complete. ({len(final_results)} sentences)")
     return final_results

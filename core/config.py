@@ -63,6 +63,13 @@ class Config:
         # GPU 配置
         self.device = "cuda" if os.getenv("USE_GPU", "true").lower() == "true" else "cpu"
         self.compute_type = os.getenv("COMPUTE_TYPE", "float16")
+
+        # 跳過 LLM Stitch：aligned 逐段直通 Flag（環境變數 SKIP_STITCH=true/1）
+        self.skip_stitch = os.getenv("SKIP_STITCH", "").lower() in ("1", "true", "yes")
+        # Rule-based stitch 合併閾值（秒）
+        self.stitch_merge_max_gap_sec = float(
+            os.getenv("STITCH_MERGE_MAX_GAP_SEC", "1.5")
+        )
         
         # 測試者名稱 (用於隱藏敏感資訊)
         self.tester_name = os.getenv("TESTER_NAME")
@@ -96,7 +103,9 @@ class Config:
             "device": self.device,
             "whisper_model": self.whisper_model,
             "llm_api_url": self.llm_api_url,
-            "is_docker": self.is_docker
+            "is_docker": self.is_docker,
+            "skip_stitch": self.skip_stitch,
+            "stitch_merge_max_gap_sec": self.stitch_merge_max_gap_sec,
         }
 
 

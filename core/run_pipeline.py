@@ -16,7 +16,7 @@ from core.config import config
 from shared.file_manager import file_manager
 from core.split import SmartAudioSplitter
 from core.pipeline import PipelinePhase2
-from core.stitch import run_stitching_logic
+from core.stitch import run_stitching_logic, aligned_to_stitch_shape
 from core.flag import run_anomaly_detector
 
 class NeuroAIPipeline:
@@ -29,6 +29,7 @@ class NeuroAIPipeline:
         case_name: Optional[str] = None,
         *,
         force_reprocess: bool = False,
+        skip_stitch: Optional[bool] = None,
     ) -> Optional[str]:
         if case_name is None:
             inferred = file_manager.infer_case_name_from_video_path(video_path)
@@ -38,6 +39,10 @@ class NeuroAIPipeline:
 
         case_name = file_manager.create_case(video_path, case_name)
         print(f" [Pipeline] Start: {case_name}")
+
+        use_no_stitch = config.skip_stitch if skip_stitch is None else skip_stitch
+        if use_no_stitch:
+            print(" [Pipeline] No-Stitch 模式：aligned 逐段直通，不做規則併句")
 
         if force_reprocess:
             n = file_manager.clear_intermediate(case_name)
@@ -52,8 +57,17 @@ class NeuroAIPipeline:
 
             self._step_2_process(chunk_metadata, case_name)
             
-            file_manager.save_status(case_name, "Refining", 80, "Stitching and Flagging...")
-            final_data = self._step_3_4_process_per_chunk(chunk_metadata, case_name)
+            file_manager.save_status(
+                case_name,
+                "Refining",
+                80,
+                "Flagging (no stitch)..."
+                if use_no_stitch
+                else "Rule-based Stitching and Flagging...",
+            )
+            final_data = self._step_3_4_process_per_chunk(
+                chunk_metadata, case_name, skip_stitch=use_no_stitch
+            )
 
             output_path = file_manager.get_output_file_path(case_name, "transcript.json")
             file_manager.save_json(final_data, output_path, backup=True)
@@ -106,8 +120,15 @@ class NeuroAIPipeline:
         for t in align_tasks:
             self.processor.run_alignment(t['w'], t['d'], t['out'], t['offset'])
 
-    def _step_3_4_process_per_chunk(self, chunk_metadata: List[Dict], case_name: str) -> List[Dict]:
-        print("\n --- Phase 3 & 4: Stitch -> Flag ---")
+    def _step_3_4_process_per_chunk(
+        self, chunk_metadata: List[Dict], case_name: str, *, skip_stitch: bool
+    ) -> List[Dict]:
+        phase_title = (
+            "Phase 3 & 4: Passthrough -> Flag"
+            if skip_stitch
+            else "Phase 3 & 4: RuleStitch -> Flag"
+        )
+        print(f"\n --- {phase_title} ---")
         inter_dir = file_manager.get_intermediate_dir(case_name)
         final_results = []
 
@@ -127,19 +148,24 @@ class NeuroAIPipeline:
                 continue
 
             stitched_data = []
-            if stitched.exists():
-                print("       Found stitched file.")
-                stitched_data = file_manager.load_json(stitched)
-            elif aligned.exists():
+            if aligned.exists():
                 raw = file_manager.load_json(aligned)
                 if raw:
-                    print("       Stitching...")
-                    try:
-                        stitched_data = run_stitching_logic(raw)
+                    if skip_stitch:
+                        print("       No-Stitch: aligned -> stitch-shaped passthrough")
+                        stitched_data = aligned_to_stitch_shape(raw)
                         file_manager.save_json(stitched_data, stitched, backup=False)
-                    except Exception as e:
-                        print(f"      ❌ Stitch failed: {e}")
-                        stitched_data = raw
+                    elif stitched.exists():
+                        print("       Found stitched file.")
+                        stitched_data = file_manager.load_json(stitched)
+                    else:
+                        print("       Rule-based Stitching...")
+                        try:
+                            stitched_data = run_stitching_logic(raw)
+                            file_manager.save_json(stitched_data, stitched, backup=False)
+                        except Exception as e:
+                            print(f"      ❌ Stitch failed: {e}")
+                            stitched_data = raw
 
             if stitched_data:
                 print("       Flagging...")
@@ -154,9 +180,12 @@ def run_pipeline(
     case_name: Optional[str] = None,
     *,
     force_reprocess: bool = False,
+    skip_stitch: Optional[bool] = None,
 ):
     pipeline = NeuroAIPipeline()
-    return pipeline.run(video_path, case_name, force_reprocess=force_reprocess)
+    return pipeline.run(
+        video_path, case_name, force_reprocess=force_reprocess, skip_stitch=skip_stitch
+    )
 
 if __name__ == "__main__":
     import argparse
@@ -174,9 +203,19 @@ if __name__ == "__main__":
         action="store_true",
         help="清空該案 intermediate 後重跑（避免沿用舊 whisper/stitch 結果）",
     )
+    parser.add_argument(
+        "--no-stitch",
+        action="store_true",
+        help="跳過規則併句：aligned 逐段轉成與 stitch 相同格式後只做 Flag（亦可用環境變數 SKIP_STITCH=1）",
+    )
     args = parser.parse_args()
 
-    if run_pipeline(args.video_path, args.case, force_reprocess=args.force):
+    if run_pipeline(
+        args.video_path,
+        args.case,
+        force_reprocess=args.force,
+        skip_stitch=True if args.no_stitch else None,
+    ):
         print("\n✅ Success!")
     else:
         print("\n❌ Failed (Try running again for resume)")

@@ -42,9 +42,11 @@ data/<case_name>/
 
 - **切 chunk** → 每 chunk 跑 Whisper、Diar、Alignment → **逐 chunk** 做 Stitch → Flag → 將各 chunk 結果 **串接**成一份 list，寫入 `output/transcript.json`。
 - **Stitch／Flag 的 LLM 視窗以「單一 chunk 內的 aligned 段落」為單位**，chunk 之間不會再跑一次全域 Stitch。
-- CLI：`python -m core.run_pipeline <video_path> [--case NAME] [--force]`  
+- CLI：`python -m core.run_pipeline <video_path> [--case NAME] [--force] [--no-stitch]`  
   - `--force`：清空該案 `intermediate` 再跑。  
+  - `--no-stitch` 或環境變數 **`SKIP_STITCH=1`**：跳過規則併句，每段 aligned 一對一轉成 stitch 形狀後只做 Flag。  
   - 若路徑為 `data/<case>/source/...` 且未指定 `--case`，會推斷 `case_name`（見 `file_manager.infer_case_name_from_video_path`）。
+  - 若你從舊版（LLM Stitch）升級到新版（Rule-based Stitch），建議使用 `--force` 或刪除既有 `*_stitched.json`，避免沿用舊快取混入比較。
 
 ### 2.2 `core/overall_pipeline.py` — `OverallPipeline`
 
@@ -76,7 +78,7 @@ flowchart LR
     Al --> AJ[_aligned.json]
   end
   subgraph p3 [Phase 3-4 每 chunk]
-    AJ --> St[run_stitching_logic LLM]
+    AJ --> St[run_stitching_logic Rule-based]
     St --> SJ[_stitched.json]
     SJ --> Fg[run_anomaly_detector LLM]
     Fg --> FJ[_flagged_for_human.json]
@@ -107,8 +109,8 @@ flowchart LR
 
 ### Phase 3–4：Stitch 與 Flag — `core/stitch.py`、`core/flag.py`
 
-- **Stitch**：以固定 **批次大小（window）** 將多條 aligned 送進 **OpenAI 相容 API**（`config.llm_api_url`），用 **instructor** 結構化輸出合併句；與 whisper 不同，**此處輸出未統一走 OpenCC**。
-- 若 LLM 回傳的 `source_ids` 未涵蓋該批次內所有 aligned `id`，稽核上會出現「stitch 漏 id」（見 `docs/evaluate.md`）。
+- **Stitch（Phase 3）**：以決定性規則 `merge_aligned_segments` 合併（同 speaker 且 `next_start - prev_end <= STITCH_MERGE_MAX_GAP_SEC`，預設 1.5 秒）；`text` 以純字串連接，並完整保留 `source_ids`。
+- Rule-based Stitch 不依賴 LLM，避免模型改寫文字造成字元刪減或 `source_ids` 漏蓋。
 - **Flag**：另一輪 LLM 批次，標記 `needs_review`、`suggested_correction` 等（prompt 要求繁體，但無強制後處理）。
 - 快取：若已存在 `*_flagged_for_human.json` 則直接載入跳過重算；反之可能跳過已存在之 `*_stitched.json`。
 
@@ -120,7 +122,8 @@ flowchart LR
 
 - **路徑**：`project_root`、`data_dir`、`model_cache_dir`。
 - **HF**：`HF_TOKEN`（pyannote）。
-- **LLM**：`LLM_API_URL`、`OPENAI_API_KEY`（OpenAI 相容，供 Stitch / Flag）。
+- **LLM**：`LLM_API_URL`、`OPENAI_API_KEY`（OpenAI 相容，供 Flag 與其他 LLM 用途；Stitch 已不使用）。
+- **Stitch 規則參數**：`STITCH_MERGE_MAX_GAP_SEC`（預設 `1.5` 秒）。
 - **Whisper / 切分 / GPU**：環境變數見 `Config` 類別欄位。
 
 ---
@@ -151,7 +154,7 @@ flowchart LR
 2. **ASR**：`whisper_one_chunk.py`（模型、`vad_filter`、語言、timeout）。
 3. **語者**：`pipeline.py` 內 pyannote pipeline 名稱與載入方式。
 4. **對齊**：`run_alignment` 的 speaker 投票邏輯。
-5. **Stitch / Flag**：模型 ID、prompt、`WINDOW_SIZE` / batch、失敗 fallback；**source_ids 完整性**與 **OpenCC 後處理**屬行為變更熱點。
+5. **Stitch / Flag**：Stitch 以規則（speaker + 時間間隔閾值）合併；Flag 仍為 LLM 批次。主要調整點為 `STITCH_MERGE_MAX_GAP_SEC`、`source_ids` 完整性與保字元策略。
 6. **合併策略**：`NeuroAIPipeline`（per-chunk stitch）vs `OverallPipeline`（全域 stitch）。
 
 ---

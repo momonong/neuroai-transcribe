@@ -31,15 +31,22 @@ from core.config import config
 from shared.file_manager import file_manager
 from core.split import SmartAudioSplitter
 from core.pipeline import PipelinePhase2
-from core.stitch import run_stitching_logic
+from core.stitch import run_stitching_logic, aligned_to_stitch_shape
 from core.flag import run_anomaly_detector
 
 class OverallPipeline:
     """完整的轉錄流程管理器"""
     
-    def __init__(self, video_path: str, case_name: Optional[str] = None, force_reprocess: bool = False):
+    def __init__(
+        self,
+        video_path: str,
+        case_name: Optional[str] = None,
+        force_reprocess: bool = False,
+        skip_stitch: Optional[bool] = None,
+    ):
         self.video_path = Path(video_path)
         self.force_reprocess = force_reprocess
+        self.skip_stitch = config.skip_stitch if skip_stitch is None else skip_stitch
         
         if not self.video_path.exists():
             raise FileNotFoundError(f"找不到影片檔案: {video_path}")
@@ -61,6 +68,7 @@ class OverallPipeline:
         print(f"   📁 案例名稱: {self.case_name}")
         print(f"   📂 輸出目錄: {self.case_dir}")
         print(f"   🔄 強制重新處理: {'是' if force_reprocess else '否'}")
+        print(f"   ⏭️ 跳過規則 Stitch (No-Stitch): {'是' if self.skip_stitch else '否'}")
 
     def _clean_gpu(self):
         gc.collect()
@@ -238,19 +246,23 @@ class OverallPipeline:
     
     def step4_stitch_and_flag(self, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """步驟 6: 文字整理和異常標記"""
-        print(f"\n🧵 [步驟 6/6] 文字整理和異常標記...")
+        print(f"\n🧵 [步驟 6/6] 規則併句和異常標記...")
         print("=" * 50)
         try:
-            print("🧵 執行文字整理...")
-            stitched_segments = run_stitching_logic(segments)
-            print(f"   ✅ 文字整理完成: {len(stitched_segments)} 個句子")
+            if self.skip_stitch:
+                print("🧵 No-Stitch：aligned 合併稿逐段直通...")
+                stitched_segments = aligned_to_stitch_shape(segments)
+            else:
+                print("🧵 執行規則併句...")
+                stitched_segments = run_stitching_logic(segments)
+            print(f"   ✅ 規則併句完成: {len(stitched_segments)} 個句子")
             print("🚩 執行異常標記...")
             flagged_segments = run_anomaly_detector(stitched_segments)
             flagged_count = sum(1 for seg in flagged_segments if seg.get('needs_review', False))
             print(f"   ✅ 異常標記完成: {flagged_count} 個片段需要人工檢查")
             return flagged_segments
         except Exception as e:
-            print(f"❌ 文字整理和標記失敗: {e}")
+            print(f"❌ 規則併句和標記失敗: {e}")
             return segments
     
     def save_results(self, final_segments: List[Dict[str, Any]]) -> str:
@@ -325,10 +337,20 @@ def main():
     parser.add_argument("--case-name", help="案例名稱 (可選，預設自動生成)")
     parser.add_argument("--chunks", type=int, default=4, help="音訊切分片段數 (預設: 4)")
     parser.add_argument("--force", action="store_true", help="強制重新處理所有檔案")
+    parser.add_argument(
+        "--no-stitch",
+        action="store_true",
+        help="跳過規則併句（與 run_pipeline --no-stitch 一致；亦可 SKIP_STITCH=1）",
+    )
     args = parser.parse_args()
     
     try:
-        pipeline = OverallPipeline(args.video_path, args.case_name, force_reprocess=args.force)
+        pipeline = OverallPipeline(
+            args.video_path,
+            args.case_name,
+            force_reprocess=args.force,
+            skip_stitch=True if args.no_stitch else None,
+        )
         result_file = pipeline.run_complete_pipeline(args.chunks)
         print(f"\n✅ 轉錄完成！結果檔案: {result_file}")
     except KeyboardInterrupt:
