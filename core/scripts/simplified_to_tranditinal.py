@@ -3,7 +3,7 @@ import os
 from opencc import OpenCC
 
 # 👇👇👇 請在這裡貼上你要修正的檔案路徑 👇👇👇
-target_file_path = r"data\20250526-19801830邱湋喆\intermediate\chunk_4_1806704_2383872_flagged_for_human.json"
+target_file_path = r"data\test\intermediate\chunk_4_2015431_2714709_flagged_for_human.json"
 
 def convert_to_traditional(file_path):
     # 1. 檢查檔案是否存在
