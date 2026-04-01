@@ -71,7 +71,7 @@ flowchart LR
   subgraph p2 [Phase 2]
     Wav --> Wh[whisper_one_chunk]
     Wh --> WJ[_whisper.json]
-    Wav --> Di[pyannote diarization]
+    Wav --> Di[diarization backend]
     Di --> DJ[_diar.json]
     WJ --> Al[run_alignment]
     DJ --> Al
@@ -96,8 +96,23 @@ flowchart LR
 | 步驟 | 實作 | 產物 |
 |------|------|------|
 | Whisper | **子程序** `python -m core.scripts.whisper_one_chunk <wav> <json>`（隔離崩潰、可 timeout） | `*_whisper.json`（含 `text`、`words`、時間） |
-| 語者 | 同一進程載入 **pyannote** `speaker-diarization-3.1` | `*_diar.json` |
+| 語者 | 依 **`DIARIZATION_BACKEND`** 選後端（見下節）；產物格式皆為與對齊相容的 `*_diar.json` | `*_diar.json`（每筆 `start`, `end`, `speaker` 字串） |
 | 對齊 | `run_alignment`：將每段 Whisper 與 diar 時間重疊最多的 speaker 對上，.global 時間加 **chunk offset** | `*_aligned.json`（`id`, `start`, `end`, `speaker`, `text`, `flag`） |
+
+#### 語者後端（`DIARIZATION_BACKEND`）
+
+| 值 | 行為 | 備註 |
+|----|------|------|
+| `pyannote`（預設） | 載入 **pyannote** `speaker-diarization-3.1`，對整段 chunk wav 做說話人分離 | 需 `HF_TOKEN`；Pyannote 改為 **延遲 import**，僅在此後端時載入。 |
+| `placeholder` | 讀取同幹檔名之 `*_whisper.json`，**每個 Whisper ASR 段**寫一條 diar（時間與該段相同、`speaker` 固定為 `SPEAKER_PLACEHOLDER_LABEL`） | 用於不接 Pyannote、或銜接測試；**不**代表真實語者。須先跑完 Whisper。 |
+| `whisper_bilstm` | 呼叫 `core/scripts/model/whisper_bilstm_diarization.py` 之掛鉤 | **目前會 `NotImplementedError`**，待訓練端補上前處理與 forward。checkpoint 路徑見 `SPEAKER_MODEL_PATH`。 |
+
+與 Whisper+BiLSTM checkpoint 相關的**離線分析**（不需跑主流程）：
+
+- `python -m core.scripts.model.analyze_speaker_checkpoint`：由 `model_state_dict` / `config` 推斷結構。
+- `python -m core.scripts.model.test_speaker_model_io`：驗證 JSON 契約、placeholder diar 測試。
+
+共用的 placeholder 寫檔邏輯在 **`core/diarization_placeholders.py`**（避免與測試腳本重複）。
 
 **Whisper 細節**（`core/scripts/whisper_one_chunk.py`）：
 
@@ -121,7 +136,12 @@ flowchart LR
 ## 4. 設定與依賴摘要 (`core/config.py`)
 
 - **路徑**：`project_root`、`data_dir`、`model_cache_dir`。
-- **HF**：`HF_TOKEN`（pyannote）。
+- **HF**：`HF_TOKEN`（僅 **`DIARIZATION_BACKEND=pyannote`** 時需要）。
+- **語者後端**：
+  - `DIARIZATION_BACKEND`：`pyannote` | `placeholder` | `whisper_bilstm`（別名見 `Config` 原始碼）。
+  - `SPEAKER_MODEL_PATH`：BiLSTM checkpoint 預設路徑（預設為專案根下 `models/whisper_medium_bilstm_best.pt`）。
+  - `SPEAKER_PLACEHOLDER_LABEL`：`placeholder` 後端寫入的固定 `speaker` 字串（預設 `PLACEHOLDER_SPEAKER`）。
+  - `SPEAKER_CLASS_LABELS`：可選，逗號分隔，例如三類時 `標籤0,標籤1,標籤2`（供日後 BiLSTM 推論對應類別 id→顯示名；尚未接線）。
 - **LLM**：`LLM_API_URL`、`OPENAI_API_KEY`（OpenAI 相容，供 Flag 與其他 LLM 用途；Stitch 已不使用）。
 - **Stitch 規則參數**：`STITCH_MERGE_MAX_GAP_SEC`（預設 `1.5` 秒）。
 - **Whisper / 切分 / GPU**：環境變數見 `Config` 類別欄位。
@@ -152,7 +172,7 @@ flowchart LR
 
 1. **切分**：`SmartAudioSplitter` 參數與 chunk 數。
 2. **ASR**：`whisper_one_chunk.py`（模型、`vad_filter`、語言、timeout）。
-3. **語者**：`pipeline.py` 內 pyannote pipeline 名稱與載入方式。
+3. **語者**：`pipeline.py` 內 `run_diarization_batch`；後端由 `DIARIZATION_BACKEND` 切換（pyannote / placeholder / whisper_bilstm 掛鉤）。
 4. **對齊**：`run_alignment` 的 speaker 投票邏輯。
 5. **Stitch / Flag**：Stitch 以規則（speaker + 時間間隔閾值）合併；Flag 仍為 LLM 批次。主要調整點為 `STITCH_MERGE_MAX_GAP_SEC`、`source_ids` 完整性與保字元策略。
 6. **合併策略**：`NeuroAIPipeline`（per-chunk stitch）vs `OverallPipeline`（全域 stitch）。

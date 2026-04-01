@@ -30,6 +30,8 @@ _project_root = _script_dir.parent.parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
+from core.diarization_placeholders import whisper_to_placeholder_diar
+
 
 def _patch_torch_load() -> None:
     """與 core/pipeline.py 一致，避免 PyTorch 2.6+ weights_only 預設造成載入失敗。"""
@@ -92,23 +94,6 @@ def validate_diar_segments(data: Any) -> Tuple[bool, List[str]]:
         if "speaker" in seg and not isinstance(seg["speaker"], str):
             errors.append(f"segments[{i}]: speaker 必須為字串（對齊後會寫入 aligned）")
     return len(errors) == 0, errors
-
-
-def whisper_to_placeholder_diar(
-    whisper_segments: List[Dict[str, Any]],
-    speaker: str = "PLACEHOLDER_SPEAKER",
-) -> List[Dict[str, Any]]:
-    """無真實模型時，用 Whisper 段時間軸產生可餵給 run_alignment 的 diar 列表（每段一條）。"""
-    out: List[Dict[str, Any]] = []
-    for w in whisper_segments:
-        out.append(
-            {
-                "start": float(w["start"]),
-                "end": float(w["end"]),
-                "speaker": speaker,
-            }
-        )
-    return out
 
 
 def inspect_checkpoint(path: Path) -> int:

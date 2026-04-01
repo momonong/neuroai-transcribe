@@ -36,8 +36,10 @@ try:
 except Exception as e:
     print(f"⚠️ Warning: Patching torch.load failed: {e}")
 
-# 正常 import（Whisper 改由 core.scripts.whisper_one_chunk 子行程執行，此處不再載入）
-from pyannote.audio import Pipeline
+# Whisper 改由 core.scripts.whisper_one_chunk 子行程執行；Pyannote 僅在 backend=pyannote 時延遲 import
+
+from core.diarization_placeholders import write_placeholder_diar_from_whisper
+
 
 class PipelinePhase2:
     def __init__(self):
@@ -112,40 +114,69 @@ class PipelinePhase2:
         print("   🧹 Batch Whisper 結束.", flush=True)
 
     def run_diarization_batch(self, tasks: List[Dict]):
-        print(f"\n🗣️ [Batch Diarization] Starting batch for {len(tasks)} files...", flush=True)
+        backend = config.diarization_backend
+        print(
+            f"\n🗣️ [Batch Diarization] backend={backend}, {len(tasks)} file(s)...",
+            flush=True,
+        )
 
-        todo_tasks = [t for t in tasks if not os.path.exists(t['json'])]
+        todo_tasks = [t for t in tasks if not os.path.exists(t["json"])]
         if not todo_tasks:
             print("   ⏩ All Diarization tasks completed. Skipping.", flush=True)
             return
+
+        if backend == "pyannote":
+            self._run_diarization_pyannote(todo_tasks)
+        elif backend == "placeholder":
+            self._run_diarization_placeholder(todo_tasks)
+        elif backend == "whisper_bilstm":
+            from core.scripts.model.whisper_bilstm_diarization import (
+                run_whisper_bilstm_diarization_batch,
+            )
+
+            run_whisper_bilstm_diarization_batch(
+                todo_tasks,
+                device=self.device,
+                checkpoint_path=config.speaker_model_path,
+            )
+        else:
+            raise ValueError(f"Unknown diarization backend: {backend}")
+
+    def _run_diarization_pyannote(self, todo_tasks: List[Dict]):
+        from pyannote.audio import Pipeline
 
         try:
             print(f"   🔄 Loading Pyannote Model...", flush=True)
             self.diarization_pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
                 use_auth_token=config.hf_token,
-                cache_dir=config.model_cache_dir
+                cache_dir=config.model_cache_dir,
             ).to(torch.device(self.device))
 
             for idx, task in enumerate(todo_tasks):
-                wav_path = task['wav']
-                json_path = task['json']
-                print(f"   [{idx+1}/{len(todo_tasks)}] Diarizing: {os.path.basename(wav_path)}", flush=True)
-                
+                wav_path = task["wav"]
+                json_path = task["json"]
+                print(
+                    f"   [{idx+1}/{len(todo_tasks)}] Diarizing: {os.path.basename(wav_path)}",
+                    flush=True,
+                )
+
                 diarization = self.diarization_pipeline(wav_path)
 
                 diar_segments = []
                 for turn, _, speaker in diarization.itertracks(yield_label=True):
-                    diar_segments.append({
-                        "start": turn.start,
-                        "end": turn.end,
-                        "speaker": speaker
-                    })
-                
-                with open(json_path, 'w', encoding='utf-8') as f:
+                    diar_segments.append(
+                        {
+                            "start": turn.start,
+                            "end": turn.end,
+                            "speaker": speaker,
+                        }
+                    )
+
+                with open(json_path, "w", encoding="utf-8") as f:
                     json.dump(diar_segments, f, ensure_ascii=False, indent=2)
-                
-                is_last = (idx == len(todo_tasks) - 1)
+
+                is_last = idx == len(todo_tasks) - 1
                 if not is_last:
                     self._clear_gpu()
 
@@ -160,7 +191,30 @@ class PipelinePhase2:
                 self._clear_gpu()
                 print("   🧹 Pyannote Model Unloaded.", flush=True)
             except Exception as e:
-                print(f"   ⚠️ Diarization 收尾清理時發生錯誤（已忽略）: {e}", flush=True)
+                print(
+                    f"   ⚠️ Diarization 收尾清理時發生錯誤（已忽略）: {e}",
+                    flush=True,
+                )
+
+    def _run_diarization_placeholder(self, todo_tasks: List[Dict]):
+        label = config.speaker_placeholder_label
+        for idx, task in enumerate(todo_tasks):
+            wav_path = task["wav"]
+            json_path = task["json"]
+            print(
+                f"   [{idx+1}/{len(todo_tasks)}] Placeholder diar: {os.path.basename(wav_path)}",
+                flush=True,
+            )
+            ok = write_placeholder_diar_from_whisper(
+                wav_path, json_path, speaker=label
+            )
+            if not ok:
+                from core.diarization_placeholders import whisper_json_path_for_wav
+
+                wj = whisper_json_path_for_wav(wav_path)
+                raise RuntimeError(
+                    f"placeholder diar 需要先有 Whisper 輸出: {wj}（請確認已跑完 Whisper）"
+                )
 
     def run_alignment(self, whisper_json, diar_json, final_output_path, chunk_offset_sec=0):
         try:

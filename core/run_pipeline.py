@@ -112,7 +112,12 @@ class NeuroAIPipeline:
         file_manager.save_status(case_name, "Whisper", 20, "Running Whisper ASR...")
         self.processor.run_whisper_batch(whisper_tasks)
         
-        file_manager.save_status(case_name, "Diarization", 50, "Running Speaker Diarization...")
+        file_manager.save_status(
+            case_name,
+            "Diarization",
+            50,
+            f"Speaker diarization ({config.diarization_backend})...",
+        )
         self.processor.run_diarization_batch(diar_tasks)
         
         file_manager.save_status(case_name, "Alignment", 70, "Aligning segments...")

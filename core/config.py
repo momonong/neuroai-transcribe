@@ -59,6 +59,32 @@ class Config:
         self.whisper_model = os.getenv("WHISPER_MODEL", "large-v3")
         self.whisper_language = os.getenv("WHISPER_LANGUAGE", "zh")
         self.whisper_beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "5"))
+
+        # 語者／diarization：pyannote（預設）| whisper_bilstm（未實作）| placeholder（依 Whisper 段寫假 diar）
+        _db = os.getenv("DIARIZATION_BACKEND", "pyannote").strip().lower()
+        if _db in ("pyannote", "hf", "huggingface"):
+            self.diarization_backend = "pyannote"
+        elif _db in ("whisper_bilstm", "bilstm", "custom_speaker", "speaker_model"):
+            self.diarization_backend = "whisper_bilstm"
+        elif _db in ("placeholder", "noop", "stub"):
+            self.diarization_backend = "placeholder"
+        else:
+            print(
+                f"⚠️ 未知的 DIARIZATION_BACKEND={_db!r}，改用 pyannote",
+                flush=True,
+            )
+            self.diarization_backend = "pyannote"
+        self.speaker_model_path = os.getenv(
+            "SPEAKER_MODEL_PATH",
+            str(self.project_root / "models" / "whisper_medium_bilstm_best.pt"),
+        )
+        self.speaker_placeholder_label = os.getenv(
+            "SPEAKER_PLACEHOLDER_LABEL", "PLACEHOLDER_SPEAKER"
+        )
+        _labels = os.getenv("SPEAKER_CLASS_LABELS", "").strip()
+        self.speaker_class_labels = [
+            x.strip() for x in _labels.split(",") if x.strip()
+        ] if _labels else []
         
         # GPU 配置
         self.device = "cuda" if os.getenv("USE_GPU", "true").lower() == "true" else "cpu"
@@ -106,6 +132,10 @@ class Config:
             "is_docker": self.is_docker,
             "skip_stitch": self.skip_stitch,
             "stitch_merge_max_gap_sec": self.stitch_merge_max_gap_sec,
+            "diarization_backend": self.diarization_backend,
+            "speaker_model_path": self.speaker_model_path,
+            "speaker_placeholder_label": self.speaker_placeholder_label,
+            "speaker_class_labels": self.speaker_class_labels,
         }
 
 

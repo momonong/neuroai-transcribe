@@ -182,8 +182,12 @@ class OverallPipeline:
                     print(f"   ⏭️ Whisper 已存在，跳過。")
                 
                 if not os.path.exists(diar_json):
-                    print(f"   🗣️ 執行 Diarization...")
-                    self.ai_processor.run_diarization_batch([{'wav': chunk_path, 'json': diar_json}])
+                    print(
+                        f"   🗣️ 執行 Diarization (backend={config.diarization_backend})..."
+                    )
+                    self.ai_processor.run_diarization_batch(
+                        [{"wav": chunk_path, "json": diar_json}]
+                    )
                     self._clean_gpu()
                 else:
                     print(f"   ⏭️ Diarization 已存在，跳過。")

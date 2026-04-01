@@ -31,3 +31,9 @@ docker compose pull
 docker compose up -d  
 ```
 
+---
+
+## 語者後端環境變數（與主流程）
+
+執行 `core.run_pipeline` 時，語者步驟由 `DIARIZATION_BACKEND` 決定（預設 `pyannote`）。若容器內**不**裝 Pyannote／不需 HF，可改 `placeholder` 做銜接測試（產物非真實語者）。BiLSTM 實作接線前請勿將 `whisper_bilstm` 用於正式轉錄。詳見 `docs/PIPELINE.md` 第 3、4 節。
+
