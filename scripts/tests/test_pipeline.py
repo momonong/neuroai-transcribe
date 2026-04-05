@@ -30,8 +30,11 @@ def test_pipeline_imports():
         from faster_whisper import WhisperModel
         print("   ✅ Faster-Whisper")
         
-        from pyannote.audio import Pipeline
-        print("   ✅ Pyannote")
+        try:
+            from pyannote.audio import Pipeline  # noqa: F401
+            print("   ✅ Pyannote")
+        except ImportError:
+            print("   ⚠️ Pyannote 未安裝（可略過：僅測 pyannote backend 時需要）")
         
         print("📦 測試 Pipeline 類別...")
         from core.pipeline import PipelinePhase2

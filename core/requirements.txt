@@ -13,3 +13,11 @@ pyannote-audio
 openai
 instructor
 pydantic
+
+# DIARIZATION_BACKEND=whisper_bilstm 時需 Neuro-AI/ 與下列套件
+transformers>=4.36.0
+librosa>=0.10.0
+soundfile>=0.12.0
+scikit-learn>=1.3.0
+tqdm>=4.65.0
+matplotlib>=3.7.0

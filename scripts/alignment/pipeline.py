@@ -1,3 +1,10 @@
+"""
+Legacy experimental script.
+
+非主線 pipeline；正式流程請使用 `core/pipeline.py`，並以
+`DIARIZATION_BACKEND` 切換 pyannote / whisper_bilstm / placeholder。
+"""
+
 import os
 import json
 import torch

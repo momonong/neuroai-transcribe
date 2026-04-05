@@ -1,53 +1,65 @@
-import os
-import sys
-import json
-import subprocess
-import torch
+from __future__ import annotations
+
 import gc
-import time
+import json
+import os
 import pathlib
-from typing import List, Dict
-from opencc import OpenCC
+import subprocess
+import sys
+import time
+from typing import Dict, List
 
-from .config import config
-
+import torch
 
 try:
-    # 強制覆寫 torch.load，預設 weights_only=False
-    original_load = torch.load
-    def permissive_load(*args, **kwargs):
-        if 'weights_only' not in kwargs:
-            kwargs['weights_only'] = False
-        return original_load(*args, **kwargs)
-    torch.load = permissive_load
+    from opencc import OpenCC  # type: ignore
+except Exception:
+    OpenCC = None  # type: ignore[assignment]
 
-    # 加入安全白名單 (防止 Diarization 載入失敗)
-    import pyannote.audio.core.task
-    from torch.torch_version import TorchVersion
-    
-    safe_list = [TorchVersion, pathlib.PosixPath, pathlib.WindowsPath]
-    target_classes = ["Specifications", "Problem", "Resolution"]
-    for name in target_classes:
-        if hasattr(pyannote.audio.core.task, name):
-            safe_list.append(getattr(pyannote.audio.core.task, name))
-            
-    if hasattr(torch.serialization, "add_safe_globals"):
-        torch.serialization.add_safe_globals(safe_list)
-except Exception as e:
-    print(f"⚠️ Warning: Patching torch.load failed: {e}")
-
-# Whisper 改由 core.scripts.whisper_one_chunk 子行程執行；Pyannote 僅在 backend=pyannote 時延遲 import
-
+from core.config import config
 from core.diarization_placeholders import write_placeholder_diar_from_whisper
+
+
+def _patch_torch_load_and_safe_globals() -> None:
+    """
+    針對 PyTorch 2.6+ 的安全載入限制做相容修補。
+
+    注意：此 patch 必須在需要載入 pyannote checkpoint 的情境下可用；
+    若環境未安裝 pyannote，這段會被 try/except 吞掉並繼續。
+    """
+    try:
+        original_load = torch.load
+
+        def permissive_load(*args, **kwargs):
+            if "weights_only" not in kwargs:
+                kwargs["weights_only"] = False
+            return original_load(*args, **kwargs)
+
+        torch.load = permissive_load  # type: ignore[assignment]
+
+        import pyannote.audio.core.task  # noqa: F401
+        from torch.torch_version import TorchVersion
+
+        safe_list = [TorchVersion, pathlib.PosixPath, pathlib.WindowsPath]
+        target_classes = ["Specifications", "Problem", "Resolution"]
+        for name in target_classes:
+            if hasattr(pyannote.audio.core.task, name):
+                safe_list.append(getattr(pyannote.audio.core.task, name))
+
+        if hasattr(torch.serialization, "add_safe_globals"):
+            torch.serialization.add_safe_globals(safe_list)
+    except Exception as e:
+        print(f"⚠️ Warning: Patching torch.load failed: {e}")
 
 
 class PipelinePhase2:
     def __init__(self):
+        _patch_torch_load_and_safe_globals()
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.compute_type = "float16" if self.device == "cuda" else "int8"
         self.whisper_model = None
         self.diarization_pipeline = None
-        self.cc = OpenCC('s2twp')
+        self.cc = OpenCC("s2twp") if OpenCC is not None else None
 
     def _clear_gpu(self):
         """強制清理 GPU 資源；若清理時發生錯誤僅記錄不拋出，避免 process 直接結束。"""
@@ -61,9 +73,12 @@ class PipelinePhase2:
             print(f"   ⚠️ _clear_gpu 時發生錯誤（已忽略）: {e}", flush=True)
 
     def run_whisper_batch(self, tasks: List[Dict]):
-        print(f"\n🎧 [Batch Whisper] Starting batch for {len(tasks)} files (one subprocess per chunk)...", flush=True)
-        
-        todo_tasks = [t for t in tasks if not os.path.exists(t['json'])]
+        print(
+            f"\n🎧 [Batch Whisper] Starting batch for {len(tasks)} files (one subprocess per chunk)...",
+            flush=True,
+        )
+
+        todo_tasks = [t for t in tasks if not os.path.exists(t["json"])]
         if not todo_tasks:
             print("   ⏩ All Whisper tasks completed. Skipping.", flush=True)
             return
@@ -75,7 +90,10 @@ class PipelinePhase2:
         for idx, task in enumerate(todo_tasks):
             wav_path = task["wav"]
             json_path = task["json"]
-            print(f"   [{idx+1}/{len(todo_tasks)}] Transcribing: {os.path.basename(wav_path)}", flush=True)
+            print(
+                f"   [{idx+1}/{len(todo_tasks)}] Transcribing: {os.path.basename(wav_path)}",
+                flush=True,
+            )
             success = False
             for attempt in range(2):
                 try:
@@ -98,7 +116,7 @@ class PipelinePhase2:
                             with open(json_path, encoding="utf-8") as f:
                                 json.load(f)
                             success = True
-                            print(f"   ✓ 輸出已寫入（子行程收尾異常，視為成功）", flush=True)
+                            print("   ✓ 輸出已寫入（子行程收尾異常，視為成功）", flush=True)
                             break
                         except Exception:
                             pass
@@ -146,7 +164,7 @@ class PipelinePhase2:
         from pyannote.audio import Pipeline
 
         try:
-            print(f"   🔄 Loading Pyannote Model...", flush=True)
+            print("   🔄 Loading Pyannote Model...", flush=True)
             self.diarization_pipeline = Pipeline.from_pretrained(
                 "pyannote/speaker-diarization-3.1",
                 use_auth_token=config.hf_token,
@@ -205,9 +223,7 @@ class PipelinePhase2:
                 f"   [{idx+1}/{len(todo_tasks)}] Placeholder diar: {os.path.basename(wav_path)}",
                 flush=True,
             )
-            ok = write_placeholder_diar_from_whisper(
-                wav_path, json_path, speaker=label
-            )
+            ok = write_placeholder_diar_from_whisper(wav_path, json_path, speaker=label)
             if not ok:
                 from core.diarization_placeholders import whisper_json_path_for_wav
 
@@ -221,9 +237,11 @@ class PipelinePhase2:
             if not os.path.exists(whisper_json) or not os.path.exists(diar_json):
                 return
 
-            with open(whisper_json, 'r', encoding='utf-8') as f: w_segs = json.load(f)
-            with open(diar_json, 'r', encoding='utf-8') as f: d_segs = json.load(f)
-                
+            with open(whisper_json, "r", encoding="utf-8") as f:
+                w_segs = json.load(f)
+            with open(diar_json, "r", encoding="utf-8") as f:
+                d_segs = json.load(f)
+
             aligned_data = []
             for idx, w in enumerate(w_segs):
                 w_start = w["start"]
@@ -234,20 +252,29 @@ class PipelinePhase2:
                     inter_end = min(w_end, d["end"])
                     if inter_end > inter_start:
                         spk = d["speaker"]
-                        speaker_scores[spk] = speaker_scores.get(spk, 0) + (inter_end - inter_start)
-                
-                best_speaker = max(speaker_scores, key=speaker_scores.get) if speaker_scores else "Unknown"
-                aligned_data.append({
-                    "id": f"chunk_{int(chunk_offset_sec)}_{idx}",
-                    "start": round(w_start + chunk_offset_sec, 3),
-                    "end": round(w_end + chunk_offset_sec, 3),
-                    "speaker": best_speaker,
-                    "text": w["text"].strip(),
-                    "flag": "review_needed" if best_speaker == "Unknown" else "auto"
-                })
-                
-            with open(final_output_path, 'w', encoding='utf-8') as f:
+                        speaker_scores[spk] = speaker_scores.get(spk, 0) + (
+                            inter_end - inter_start
+                        )
+
+                best_speaker = (
+                    max(speaker_scores, key=speaker_scores.get)
+                    if speaker_scores
+                    else "Unknown"
+                )
+                aligned_data.append(
+                    {
+                        "id": f"chunk_{int(chunk_offset_sec)}_{idx}",
+                        "start": round(w_start + chunk_offset_sec, 3),
+                        "end": round(w_end + chunk_offset_sec, 3),
+                        "speaker": best_speaker,
+                        "text": w["text"].strip(),
+                        "flag": "review_needed" if best_speaker == "Unknown" else "auto",
+                    }
+                )
+
+            with open(final_output_path, "w", encoding="utf-8") as f:
                 json.dump(aligned_data, f, ensure_ascii=False, indent=2)
-                
+
         except Exception as e:
             print(f"   ❌ Alignment Failed: {e}", flush=True)
+

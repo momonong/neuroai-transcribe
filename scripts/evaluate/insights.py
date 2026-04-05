@@ -39,7 +39,7 @@ def _chunk_verdict(
         return "無法計算（缺 aligned 或 post_stitch）"
     if retention < 0.70:
         return (
-            "極度嚴重：經 LLM stitch 後字元大幅萎縮，宜優先檢查併句／source_ids 完整性。"
+            "極度嚴重：規則併句後字元大幅萎縮，宜優先檢查併句／source_ids 完整性。"
         )
     if retention < 0.85 and missing_ids >= 50:
         return "嚴重漏句：字元保留率低且大量 aligned id 未被 stitch 引用。"
@@ -47,10 +47,10 @@ def _chunk_verdict(
         return "明顯字元流失：併句後顯著短於 aligned 串接。"
     if retention > 1.03:
         return (
-            "字元數高於 aligned：可能 LLM 補字、標點／贅字，或與合併策略有關；漏 id 仍請留意。"
+            "字元數高於 aligned：可能為標點／贅字補入，或與合併策略有關；漏 id 仍請留意。"
         )
     if missing_ids >= 40:
-        return "字元比尚可，但仍有大量 segment id 未被回收，請檢查併句批次與 LLM 輸出。"
+        return "字元比尚可，但仍有大量 segment id 未被回收，請檢查併句批次與 source_ids 產生邏輯。"
     if missing_ids >= 15:
         return "輕度至中度 id 遺漏。"
     return "此 chunk 相對穩定。"
@@ -169,7 +169,7 @@ def attach_insights_layer(audit: Dict[str, Any]) -> Dict[str, Any]:
         )
 
     action_hints: List[str] = [
-        "若 missing id 與字元保留率雙高：優先檢討 LLM stitch（批次窗口、prompt、`source_ids` 強制完備或 rule-based fallback）。",
+        "若 missing id 與字元保留率雙高：優先檢討規則併句條件（時間窗、同 speaker 合併閾值）與 `source_ids` 完整性。",
         "若併句前 CER 已可接受、併句後變差：可將「語意順稿」與「逐字繼承」拆階段，先保字再語意。",
         "實驗對照：以規則併句（同說話者＋時間接近）產生一版終稿，再對照本報告數值。",
     ]

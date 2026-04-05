@@ -283,7 +283,7 @@ def build_ground_truth_report(
         aligned_raw = concat_aligned_chunks(inter_dir, stems)
         aligned_norm = normalize_for_character_eval(aligned_raw)
         refs["aligned_concat_pre_stitch"] = {
-            "description": "全部 chunk 的 aligned 依序串接（LLM stitch 前）",
+            "description": "全部 chunk 的 aligned 依序串接（規則併句前）",
             **reference_vs_hypothesis_metrics(gt_norm, aligned_norm),
         }
 

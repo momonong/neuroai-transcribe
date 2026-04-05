@@ -60,8 +60,8 @@ class Config:
         self.whisper_language = os.getenv("WHISPER_LANGUAGE", "zh")
         self.whisper_beam_size = int(os.getenv("WHISPER_BEAM_SIZE", "5"))
 
-        # 語者／diarization：pyannote（預設）| whisper_bilstm（未實作）| placeholder（依 Whisper 段寫假 diar）
-        _db = os.getenv("DIARIZATION_BACKEND", "pyannote").strip().lower()
+        # 語者／diarization：whisper_bilstm（預設）| pyannote | placeholder（依 Whisper 段寫假 diar）
+        _db = os.getenv("DIARIZATION_BACKEND", "whisper_bilstm").strip().lower()
         if _db in ("pyannote", "hf", "huggingface"):
             self.diarization_backend = "pyannote"
         elif _db in ("whisper_bilstm", "bilstm", "custom_speaker", "speaker_model"):
@@ -90,7 +90,7 @@ class Config:
         self.device = "cuda" if os.getenv("USE_GPU", "true").lower() == "true" else "cpu"
         self.compute_type = os.getenv("COMPUTE_TYPE", "float16")
 
-        # 跳過 LLM Stitch：aligned 逐段直通 Flag（環境變數 SKIP_STITCH=true/1）
+        # 跳過規則併句：aligned 逐段直通 Flag（環境變數 SKIP_STITCH=true/1）
         self.skip_stitch = os.getenv("SKIP_STITCH", "").lower() in ("1", "true", "yes")
         # Rule-based stitch 合併閾值（秒）
         self.stitch_merge_max_gap_sec = float(

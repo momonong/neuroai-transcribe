@@ -234,3 +234,4 @@ __marimo__/
 # editor configs
 .vscode
 .idea
+.cursor
