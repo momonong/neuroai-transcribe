@@ -31,6 +31,14 @@ def get_current_user(
     user = db.get(User, user_id)
     if user is None:
         raise HTTPException(status_code=401, detail="使用者不存在")
+    if not user.is_active:
+        raise HTTPException(status_code=401, detail="此帳號已被停權，請聯絡管理員")
+    return user
+
+
+def require_admin(user: User = Depends(get_current_user)) -> User:
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="需要管理員權限")
     return user
 
 

@@ -14,7 +14,7 @@ from __future__ import annotations
 import enum
 from typing import List
 
-from sqlalchemy import Enum as SAEnum, ForeignKey, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, Enum as SAEnum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -36,6 +36,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     real_name: Mapped[str] = mapped_column(String(255))
     role: Mapped[str] = mapped_column(String(64), default="user")
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
 
     project_links: Mapped[List["ProjectUserLink"]] = relationship(
         back_populates="user",

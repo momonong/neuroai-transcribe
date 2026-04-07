@@ -22,7 +22,7 @@ from database import get_db
 
 from deps import assert_project_member, assert_user_can_access_case, get_current_user
 
-from models import ProjectUserLink, Task, TaskStatus, User
+from models import Project, ProjectUserLink, Task, TaskStatus, User
 
 from schemas import TaskUpdate
 
@@ -84,7 +84,10 @@ def _assignee_real_name(db: Session, task: Task) -> str | None:
 
     u = db.get(User, task.assignee_id)
 
-    return u.real_name if u else None
+    if u is None or not u.is_active:
+        return None
+
+    return u.real_name
 
 
 
@@ -217,11 +220,48 @@ def patch_case_task(
         raise HTTPException(status_code=400, detail="沒有要更新的欄位")
 
 
+    if "project_id" in data:
+
+        new_pid = data["project_id"]
+
+        if new_pid is None:
+
+            raise HTTPException(status_code=400, detail="project_id 不可為空")
+
+        if new_pid != task.project_id:
+
+            target = db.get(Project, new_pid)
+
+            if target is None:
+
+                raise HTTPException(status_code=404, detail="目標專案不存在")
+
+            assert_project_member(db, user.id, new_pid)
+
+            task.project_id = new_pid
+
+            if task.assignee_id is not None:
+
+                still_member = db.scalar(
+
+                    select(ProjectUserLink).where(
+
+                        ProjectUserLink.project_id == new_pid,
+
+                        ProjectUserLink.user_id == task.assignee_id,
+
+                    )
+
+                )
+
+                if still_member is None:
+
+                    task.assignee_id = None
+
 
     if "status" in data:
 
         task.status = data["status"]
-
 
 
     if "assignee_id" in data:
@@ -229,6 +269,12 @@ def patch_case_task(
         aid = data["assignee_id"]
 
         if aid is not None:
+
+            assignee_user = db.get(User, aid)
+
+            if assignee_user is None or not assignee_user.is_active:
+
+                raise HTTPException(status_code=400, detail="負責人必須為已啟用之專案成員")
 
             link = db.scalar(
 
@@ -263,5 +309,7 @@ def patch_case_task(
         "assignee_id": task.assignee_id,
 
         "assignee_real_name": _assignee_real_name(db, task),
+
+        "project_id": task.project_id,
 
     }

@@ -61,7 +61,17 @@ export const useTranscript = (projectId: number | null) => {
   }, [fetchChunks, fetchTesters]);
 
   useEffect(() => {
-    if (!selectedChunk) return;
+    if (!selectedChunk) {
+      setSegments([]);
+      setSpeakerMap({});
+      setChunkTimepoints([]);
+      setVideoOffset(0);
+      setFileType('original');
+      setError(null);
+      setLoading(false);
+      setHasUnsavedChanges(false);
+      return;
+    }
     setLoading(true);
     setError(null);
 

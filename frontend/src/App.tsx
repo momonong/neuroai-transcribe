@@ -15,7 +15,15 @@ import {
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import axios from 'axios';
 
-import { setAuthToken, TOKEN_KEY, updateCaseTask, type CaseTaskPatchResponse } from './apiClient';
+import {
+  setAuthToken,
+  TOKEN_KEY,
+  updateCaseTask,
+  type AuthMeResponse,
+  type CaseTaskPatchResponse,
+  type LoginResponse,
+} from './apiClient';
+import { AdminProjectDialog } from './components/AdminProjectDialog';
 import { useTranscript } from './hooks/useTranscript';
 import { TranscriptItem } from './components/TranscriptItem';
 import { TopBar } from './components/TopBar';
@@ -49,7 +57,20 @@ const DEFAULT_PROJECT_NAME = '預設專案 (Default Project)';
 
 /** 登入／註冊表單：白底；抵消 Chrome 對密碼欄 autofill 的灰色底。 */
 const AUTH_DIALOG_TEXT_FIELD_SX = {
-  '& .MuiOutlinedInput-root': { backgroundColor: '#fff' },
+  '& .MuiOutlinedInput-root': {
+    backgroundColor: '#fff',
+    overflow: 'visible',
+  },
+  // 縮小後的浮動標籤需蓋住 outline，否則文字會與邊線重疊被 visually 切斷
+  '& .MuiInputLabel-root.MuiInputLabel-shrink': {
+    backgroundColor: '#fff',
+    px: 0.75,
+    borderRadius: 0.5,
+    zIndex: 1,
+  },
+  '& .MuiOutlinedInput-notchedOutline legend': {
+    maxWidth: '100%',
+  },
   '& input:-webkit-autofill': {
     WebkitBoxShadow: '0 0 0 1000px #fff inset',
     WebkitTextFillColor: 'rgba(0, 0, 0, 0.87)',
@@ -81,10 +102,19 @@ function App() {
   const [authUser, setAuthUser] = useState('');
   const [authPass, setAuthPass] = useState('');
   const [authRealName, setAuthRealName] = useState('');
+  const [sessionRole, setSessionRole] = useState<string | null>(null);
+  const [sessionUserId, setSessionUserId] = useState<number | null>(null);
+  const [adminPanelOpen, setAdminPanelOpen] = useState(false);
+  const [changePasswordOpen, setChangePasswordOpen] = useState(false);
+  const [pwdOld, setPwdOld] = useState('');
+  const [pwdNew, setPwdNew] = useState('');
+  const [pwdConfirm, setPwdConfirm] = useState('');
+  const [passwordConfirmError, setPasswordConfirmError] = useState('');
 
   const {
     selectedChunk,
     setSelectedChunk,
+    fetchChunks,
     segments,
     speakerMap,
     videoOffset,
@@ -158,12 +188,7 @@ function App() {
       .catch(() => setVideoRows([]));
   }, [selectedProjectId, setMediaFileName]);
 
-  useEffect(() => {
-    if (!loggedIn) {
-      setProjects([]);
-      setSelectedProjectId(null);
-      return;
-    }
+  const loadMyProjects = useCallback(() => {
     axios
       .get<ProjectRow[]>('/api/projects/my')
       .then((res) => {
@@ -176,6 +201,35 @@ function App() {
         });
       })
       .catch(() => setProjects([]));
+  }, []);
+
+  useEffect(() => {
+    if (!loggedIn) {
+      setProjects([]);
+      setSelectedProjectId(null);
+      return;
+    }
+    loadMyProjects();
+  }, [loggedIn, loadMyProjects]);
+
+  useEffect(() => {
+    if (!loggedIn) {
+      setSessionRole(null);
+      setSessionUserId(null);
+      return;
+    }
+    axios
+      .get<AuthMeResponse>('/api/auth/me')
+      .then((res) => {
+        setSessionRole(res.data.role);
+        setSessionUserId(res.data.id);
+      })
+      .catch(() => {
+        setAuthToken(null);
+        setLoggedIn(false);
+        setSessionRole(null);
+        setSessionUserId(null);
+      });
   }, [loggedIn]);
 
   useEffect(() => {
@@ -260,6 +314,26 @@ function App() {
     }
   };
 
+  const handleCurrentCaseProjectChange = async (raw: string) => {
+    const cn = currentVideoRow?.case_name;
+    if (!cn || selectedProjectId == null) return;
+    const newPid = Number(raw);
+    if (newPid === selectedProjectId) return;
+    try {
+      await updateCaseTask(cn, { project_id: newPid });
+      setVideoRows((prev) => prev.filter((r) => r.case_name !== cn));
+      setMediaFileName('');
+      setSelectedChunk('');
+      setSelectedCase(null);
+      setCaseChunks([]);
+      fetchChunks();
+      setToast({ open: true, msg: '影片已成功轉移至其他專案', type: 'success' });
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: { detail?: string } } };
+      setToast({ open: true, msg: ax.response?.data?.detail ?? '轉移專案失敗', type: 'error' });
+    }
+  };
+
   useEffect(() => {
     if (!mediaFileName) return;
     if (!filteredVideos.some((v) => v.path === mediaFileName)) {
@@ -269,15 +343,19 @@ function App() {
 
   const handleLogin = async () => {
     try {
-      const res = await axios.post<{ access_token: string }>('/api/auth/login', {
+      const res = await axios.post<LoginResponse>('/api/auth/login', {
         username: authUser,
         password: authPass,
       });
       setAuthToken(res.data.access_token);
       setLoggedIn(true);
+      setSessionRole(res.data.role);
+      setSessionUserId(res.data.user_id);
       setToast({ open: true, msg: '登入成功', type: 'success' });
-    } catch {
-      setToast({ open: true, msg: '登入失敗', type: 'error' });
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: { detail?: string } } };
+      const msg = ax.response?.data?.detail ?? '登入失敗';
+      setToast({ open: true, msg, type: 'error' });
     }
   };
 
@@ -310,6 +388,45 @@ function App() {
     setSelectedProjectId(null);
     setVideoRows([]);
     setMediaFileName('');
+    setSessionRole(null);
+    setSessionUserId(null);
+    setAdminPanelOpen(false);
+  };
+
+  const handleCloseAdminPanel = () => {
+    setAdminPanelOpen(false);
+    if (loggedIn) loadMyProjects();
+  };
+
+  const closeChangePasswordDialog = () => {
+    setPwdOld('');
+    setPwdNew('');
+    setPwdConfirm('');
+    setPasswordConfirmError('');
+    setChangePasswordOpen(false);
+  };
+
+  const handleSaveChangePassword = async () => {
+    if (pwdNew !== pwdConfirm) {
+      setPasswordConfirmError('新密碼與確認密碼不一致');
+      return;
+    }
+    setPasswordConfirmError('');
+    if (!pwdOld || !pwdNew) {
+      setToast({ open: true, msg: '請填寫所有欄位', type: 'warning' });
+      return;
+    }
+    try {
+      await axios.patch('/api/auth/me/password', {
+        old_password: pwdOld,
+        new_password: pwdNew,
+      });
+      closeChangePasswordDialog();
+      setToast({ open: true, msg: '密碼已更新', type: 'success' });
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: { detail?: string } } };
+      setToast({ open: true, msg: ax.response?.data?.detail ?? '變更密碼失敗', type: 'error' });
+    }
   };
 
   useEffect(() => {
@@ -483,6 +600,9 @@ function App() {
         hasUnsavedChanges={hasUnsavedChanges}
         loading={loading}
         onLogout={loggedIn ? handleLogout : undefined}
+        onChangePassword={loggedIn ? () => setChangePasswordOpen(true) : undefined}
+        showAdminButton={loggedIn && sessionRole === 'admin'}
+        onAdminOpen={loggedIn && sessionRole === 'admin' ? () => setAdminPanelOpen(true) : undefined}
       />
 
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
@@ -505,7 +625,10 @@ function App() {
                     當前影片設定
                   </Typography>
                   <Grid container spacing={1}>
-                    <Grid size={6}>
+                    <Grid size={{ xs: 12, sm: 4 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 0.5 }}>
+                        狀態
+                      </Typography>
                       <Select
                         fullWidth
                         size="small"
@@ -524,7 +647,10 @@ function App() {
                         ))}
                       </Select>
                     </Grid>
-                    <Grid size={6}>
+                    <Grid size={{ xs: 12, sm: 4 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 0.5 }}>
+                        負責人
+                      </Typography>
                       <Select
                         fullWidth
                         size="small"
@@ -544,6 +670,28 @@ function App() {
                         {(currentProject?.members ?? []).map((m) => (
                           <MenuItem key={m.user_id} value={String(m.user_id)}>
                             {m.real_name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </Grid>
+                    <Grid size={{ xs: 12, sm: 4 }}>
+                      <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 0.5 }}>
+                        所屬專案
+                      </Typography>
+                      <Select
+                        fullWidth
+                        size="small"
+                        value={selectedProjectId == null ? '' : String(selectedProjectId)}
+                        onChange={(e) => void handleCurrentCaseProjectChange(String(e.target.value))}
+                        sx={{
+                          color: 'white',
+                          bgcolor: '#0f172a',
+                          '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
+                        }}
+                      >
+                        {projects.map((p) => (
+                          <MenuItem key={p.id} value={String(p.id)}>
+                            {p.name}
                           </MenuItem>
                         ))}
                       </Select>
@@ -1074,6 +1222,73 @@ function App() {
               )}
           </DialogActions>
       </Dialog>
+
+      <Dialog open={changePasswordOpen} onClose={closeChangePasswordDialog} maxWidth="xs" fullWidth>
+        <DialogTitle>修改密碼</DialogTitle>
+        <DialogContent
+          sx={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 2,
+            pt: 2.5,
+            px: 3,
+            pb: 1,
+            bgcolor: '#fff',
+            overflow: 'visible',
+          }}
+        >
+          <TextField
+            label="舊密碼"
+            type="password"
+            value={pwdOld}
+            onChange={(e) => setPwdOld(e.target.value)}
+            fullWidth
+            autoComplete="current-password"
+            sx={AUTH_DIALOG_TEXT_FIELD_SX}
+          />
+          <TextField
+            label="新密碼"
+            type="password"
+            value={pwdNew}
+            onChange={(e) => {
+              setPwdNew(e.target.value);
+              setPasswordConfirmError('');
+            }}
+            fullWidth
+            autoComplete="new-password"
+            sx={AUTH_DIALOG_TEXT_FIELD_SX}
+          />
+          <TextField
+            label="確認新密碼"
+            type="password"
+            value={pwdConfirm}
+            onChange={(e) => {
+              setPwdConfirm(e.target.value);
+              setPasswordConfirmError('');
+            }}
+            fullWidth
+            autoComplete="new-password"
+            error={!!passwordConfirmError}
+            helperText={passwordConfirmError || undefined}
+            sx={AUTH_DIALOG_TEXT_FIELD_SX}
+          />
+        </DialogContent>
+        <DialogActions sx={{ bgcolor: '#fff', px: 3, pb: 2 }}>
+          <Button onClick={closeChangePasswordDialog}>取消</Button>
+          <Button variant="contained" onClick={handleSaveChangePassword}>
+            儲存
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {sessionUserId != null && (
+        <AdminProjectDialog
+          open={adminPanelOpen}
+          onClose={handleCloseAdminPanel}
+          currentUserId={sessionUserId}
+          onToast={(msg, type) => setToast({ open: true, msg, type })}
+        />
+      )}
 
       <Snackbar open={toast.open} autoHideDuration={3000} onClose={() => setToast({...toast, open:false})}><Alert severity={toast.type} variant="filled">{toast.msg}</Alert></Snackbar>
     </Box>

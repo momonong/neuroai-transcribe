@@ -11,6 +11,9 @@ interface Props {
   hasUnsavedChanges: boolean;
   loading: boolean;
   onLogout?: () => void;
+  onChangePassword?: () => void;
+  onAdminOpen?: () => void;
+  showAdminButton?: boolean;
 }
 
 export const TopBar: React.FC<Props> = ({
@@ -22,6 +25,9 @@ export const TopBar: React.FC<Props> = ({
   hasUnsavedChanges,
   loading,
   onLogout,
+  onChangePassword,
+  onAdminOpen,
+  showAdminButton,
 }) => {
   return (
     <Paper square elevation={0} sx={{ height: 60, px: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: '#1e293b', borderBottom: '1px solid #334155', flexShrink: 0 }}>
@@ -76,6 +82,24 @@ export const TopBar: React.FC<Props> = ({
       </Box>
 
       <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+          {showAdminButton && onAdminOpen && (
+            <Button
+              variant="outlined"
+              onClick={onAdminOpen}
+              sx={{ borderColor: '#475569', color: '#94a3b8', '&:hover': { borderColor: '#a78bfa', color: '#c4b5fd' } }}
+            >
+              專案人員管理
+            </Button>
+          )}
+          {onChangePassword && (
+            <Button
+              variant="outlined"
+              onClick={onChangePassword}
+              sx={{ borderColor: '#475569', color: '#94a3b8', '&:hover': { borderColor: '#fbbf24', color: '#fcd34d' } }}
+            >
+              修改密碼
+            </Button>
+          )}
           {onLogout && (
             <Button
               variant="outlined"

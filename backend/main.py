@@ -12,18 +12,43 @@ if str(_project_root) not in sys.path:
 import models  # noqa: F401 — 註冊 ORM 對應
 from database import SessionLocal, engine
 from fastapi import FastAPI
+from sqlalchemy import inspect, text
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from models import Base
 
 from config import DATA_DIR, PROJECT_ROOT
-from routers import auth, chunks, export, projects, upload, videos
+from routers import admin, auth, chunks, export, projects, upload, videos
 from sync_disk_tasks import sync_case_tasks_for_default_project
+
+
+def _ensure_users_is_active_column() -> None:
+    """既有資料庫補上 users.is_active（create_all 不會改欄位）。"""
+    try:
+        inspector = inspect(engine)
+    except Exception:
+        return
+    if not inspector.has_table("users"):
+        return
+    cols = {c["name"] for c in inspector.get_columns("users")}
+    if "is_active" in cols:
+        return
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect == "sqlite":
+            conn.execute(
+                text("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT 1")
+            )
+        else:
+            conn.execute(
+                text("ALTER TABLE users ADD COLUMN is_active BOOLEAN NOT NULL DEFAULT true")
+            )
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    _ensure_users_is_active_column()
     db = SessionLocal()
     try:
         sync_case_tasks_for_default_project(db)
@@ -66,6 +91,7 @@ app.add_middleware(
 app.mount("/static", StaticFiles(directory=DATA_DIR), name="static")
 
 app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(projects.router)
 app.include_router(videos.router)
 app.include_router(chunks.router)

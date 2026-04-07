@@ -25,7 +25,10 @@ def list_my_projects(db: Session = Depends(get_db), user: User = Depends(get_cur
         member_rows = db.execute(
             select(User.id, User.real_name)
             .join(ProjectUserLink, ProjectUserLink.user_id == User.id)
-            .where(ProjectUserLink.project_id == p.id)
+            .where(
+                ProjectUserLink.project_id == p.id,
+                User.is_active.is_(True),
+            )
         ).all()
         result.append(
             {

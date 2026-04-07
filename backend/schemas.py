@@ -19,6 +19,15 @@ class LoginBody(BaseModel):
     password: str
 
 
+class PasswordChange(BaseModel):
+    """登入後變更自己的密碼。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    old_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=1)
+
+
 class TranscriptSegment(BaseModel):
     sentence_id: float
     start: float
@@ -38,6 +47,24 @@ class SavePayload(BaseModel):
     segments: List[TranscriptSegment]
 
 
+class AdminCreateProjectBody(BaseModel):
+    """管理員建立專案。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=10_000)
+
+
+class AdminUpdateProjectBody(BaseModel):
+    """管理員更新專案（至少提供一個欄位）。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: Optional[str] = Field(None, min_length=1, max_length=255)
+    description: Optional[str] = Field(None, max_length=10_000)
+
+
 class TaskUpdate(BaseModel):
     """PATCH 任務：僅傳入要更新的欄位；assignee_id 傳 null 表示未指派。"""
 
@@ -45,3 +72,4 @@ class TaskUpdate(BaseModel):
 
     status: Optional[TaskStatus] = None
     assignee_id: Optional[int] = None
+    project_id: Optional[int] = None
