@@ -4,9 +4,14 @@ GET /api/export/{case_name}/{dataset_type}
 import io
 import json
 import urllib.parse
-from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
 
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
+
+from database import get_db
+from deps import assert_user_can_access_case, get_current_user
+from models import User
 from shared.file_manager import file_manager
 
 router = APIRouter(prefix="/api", tags=["export"])
@@ -22,8 +27,13 @@ SUFFIX_MAP = {
 
 
 @router.get("/export/{case_name}/{dataset_type}")
-async def export_dataset(case_name: str, dataset_type: str):
-    """匯出合併後的資料集，回傳 JSON 下載。"""
+async def export_dataset(
+    case_name: str,
+    dataset_type: str,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    assert_user_can_access_case(db, user, case_name)
     suffix = SUFFIX_MAP.get(dataset_type)
     if not suffix:
         raise HTTPException(status_code=400, detail="Unknown dataset type")

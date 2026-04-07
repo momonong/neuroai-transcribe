@@ -1,6 +1,22 @@
 # docker push momonong/neuroai-backend:latest
 # docker push momonong/neuroai-frontend:latest
 services:
+  db:
+    image: postgres:18-alpine
+    container_name: neuroai_db
+    environment:
+      POSTGRES_USER: neuroai
+      POSTGRES_PASSWORD: neuroai_secret
+      POSTGRES_DB: neuroai_db
+    volumes:
+      - neuroai_pg_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U neuroai -d neuroai_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
   backend:
     build:
       context: .
@@ -14,7 +30,12 @@ services:
     environment:
       - PYTHONPATH=/app
       - RUN_PIPELINE_AFTER_UPLOAD=false
+      - DATABASE_URL=postgresql+psycopg://neuroai:neuroai_secret@db:5432/neuroai_db
+      - JWT_SECRET=change-me-in-production
     working_dir: /app/backend
+    depends_on:
+      db:
+        condition: service_healthy
     restart: unless-stopped
 
   frontend:
@@ -28,3 +49,6 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+
+volumes:
+  neuroai_pg_data:

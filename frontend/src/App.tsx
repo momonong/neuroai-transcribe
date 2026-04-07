@@ -15,12 +15,29 @@ import {
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import axios from 'axios';
 
+import { setAuthToken, TOKEN_KEY } from './apiClient';
 import { useTranscript } from './hooks/useTranscript';
 import { TranscriptItem } from './components/TranscriptItem';
 import { TopBar } from './components/TopBar';
 import { ChunkTimepoints } from './components/ChunkTimepoints';
 
 const STATIC_BASE = `/static`;
+
+type ProjectMember = { user_id: number; real_name: string };
+type ProjectRow = { id: number; name: string; members: ProjectMember[] };
+type VideoRow = {
+  path: string;
+  name: string;
+  case_name: string;
+  status: string;
+  assignee_real_name: string | null;
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  PENDING: '未開始',
+  IN_PROGRESS: '進行中',
+  COMPLETED: '已完成',
+};
 
 const formatMs = (ms: number) => {
     if (isNaN(ms)) return "00:00";
@@ -31,19 +48,46 @@ const formatMs = (ms: number) => {
 };
 
 function App() {
-  const { 
-    selectedChunk, setSelectedChunk,
-    segments, speakerMap, videoOffset, mediaFileName, setMediaFileName,
-    chunkTimepoints, fileType,
-    hasUnsavedChanges, loading, error,
-    updateText, updateSegmentTime, updateSegmentEndTime, updateSpeaker, renameSpeaker, save,
-    deleteSegment, addSegment, uploadVideo, existingTesters, fetchTesters,
-    resolveFlag 
-  } = useTranscript();
+  const [loggedIn, setLoggedIn] = useState(() => !!localStorage.getItem(TOKEN_KEY));
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [videoRows, setVideoRows] = useState<VideoRow[]>([]);
+  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [assigneeFilter, setAssigneeFilter] = useState<string>('');
+  const [authMode, setAuthMode] = useState<'login' | 'register'>('login');
+  const [authUser, setAuthUser] = useState('');
+  const [authPass, setAuthPass] = useState('');
+  const [authRealName, setAuthRealName] = useState('');
+
+  const {
+    selectedChunk,
+    setSelectedChunk,
+    segments,
+    speakerMap,
+    videoOffset,
+    mediaFileName,
+    setMediaFileName,
+    chunkTimepoints,
+    fileType,
+    hasUnsavedChanges,
+    loading,
+    error,
+    updateText,
+    updateSegmentTime,
+    updateSegmentEndTime,
+    updateSpeaker,
+    renameSpeaker,
+    save,
+    deleteSegment,
+    addSegment,
+    uploadVideo,
+    existingTesters,
+    fetchTesters,
+    resolveFlag,
+  } = useTranscript(selectedProjectId);
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const [availableVideos, setAvailableVideos] = useState<{path:string, name:string}[]>([]);
-  const [toast, setToast] = useState({ open: false, msg: '', type: 'info' as any });
+  const [toast, setToast] = useState({ open: false, msg: '', type: 'info' as 'success' | 'error' | 'info' | 'warning' });
 
   const [selectedCase, setSelectedCase] = useState<string | null>(null);
   const [caseChunks, setCaseChunks] = useState<string[]>([]); 
@@ -71,20 +115,168 @@ function App() {
   const [jumpInput, setJumpInput] = useState("");
   const [autoPlayAfterJump, setAutoPlayAfterJump] = useState(false);
 
-  const fetchVideos = () => {
-     axios.get(`/api/videos`)
-       .then(res => {
-         const uniqueVideos = Array.from(
-             new Map(res.data.map((item: any) => [item.path, item])).values()
-         ) as {path: string, name: string}[];
-         setAvailableVideos(uniqueVideos);
-       })
-       .catch(console.error);
-  };
+  const loadVideoRows = useCallback(() => {
+    if (selectedProjectId == null) {
+      setVideoRows([]);
+      return;
+    }
+    axios
+      .get<VideoRow[]>('/api/videos', { params: { project_id: selectedProjectId } })
+      .then((res) => {
+        // #region agent log
+        fetch('http://127.0.0.1:7665/ingest/7292f49e-61a1-4301-9a1e-6fdc30e4bb00', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4dbe56' },
+          body: JSON.stringify({
+            sessionId: '4dbe56',
+            location: 'App.tsx:loadVideoRows',
+            message: 'videos ok',
+            hypothesisId: 'H1',
+            data: { count: res.data?.length ?? 0, projectId: selectedProjectId },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        setVideoRows(res.data);
+      })
+      .catch((err: unknown) => {
+        // #region agent log
+        const ax = err as { response?: { status?: number } };
+        fetch('http://127.0.0.1:7665/ingest/7292f49e-61a1-4301-9a1e-6fdc30e4bb00', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4dbe56' },
+          body: JSON.stringify({
+            sessionId: '4dbe56',
+            location: 'App.tsx:loadVideoRows',
+            message: 'videos err',
+            hypothesisId: 'H3',
+            data: { status: ax.response?.status, projectId: selectedProjectId },
+            timestamp: Date.now(),
+          }),
+        }).catch(() => {});
+        // #endregion
+        setVideoRows([]);
+      });
+  }, [selectedProjectId]);
 
   useEffect(() => {
-      fetchVideos();
-  }, []);
+    if (!loggedIn) {
+      setProjects([]);
+      setSelectedProjectId(null);
+      return;
+    }
+    axios
+      .get<ProjectRow[]>('/api/projects/my')
+      .then((res) => {
+        setProjects(res.data);
+        setSelectedProjectId((prev) => {
+          if (prev != null && res.data.some((p) => p.id === prev)) return prev;
+          return res.data.length ? res.data[0].id : null;
+        });
+      })
+      .catch(() => setProjects([]));
+  }, [loggedIn]);
+
+  useEffect(() => {
+    loadVideoRows();
+  }, [loadVideoRows]);
+
+  const currentProject = useMemo(
+    () => projects.find((p) => p.id === selectedProjectId) ?? null,
+    [projects, selectedProjectId],
+  );
+
+  const assigneeOptions = useMemo(() => {
+    const names = new Set<string>();
+    videoRows.forEach((v) => {
+      if (v.assignee_real_name) names.add(v.assignee_real_name);
+    });
+    currentProject?.members.forEach((m) => names.add(m.real_name));
+    return Array.from(names).sort();
+  }, [videoRows, currentProject]);
+
+  const filteredVideos = useMemo(() => {
+    return videoRows.filter((v) => {
+      if (statusFilter && v.status !== statusFilter) return false;
+      if (assigneeFilter === '__unassigned__') return !v.assignee_real_name;
+      if (assigneeFilter) return v.assignee_real_name === assigneeFilter;
+      return true;
+    });
+  }, [videoRows, statusFilter, assigneeFilter]);
+
+  useEffect(() => {
+    // #region agent log
+    fetch('http://127.0.0.1:7665/ingest/7292f49e-61a1-4301-9a1e-6fdc30e4bb00', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4dbe56' },
+      body: JSON.stringify({
+        sessionId: '4dbe56',
+        location: 'App.tsx:filterSnapshot',
+        message: 'video filter snapshot',
+        hypothesisId: 'H2',
+        data: {
+          videoRowsLen: videoRows.length,
+          filteredLen: filteredVideos.length,
+          assigneeFilter,
+          statusFilter,
+        },
+        timestamp: Date.now(),
+      }),
+    }).catch(() => {});
+    // #endregion
+  }, [videoRows, filteredVideos, assigneeFilter, statusFilter]);
+
+  useEffect(() => {
+    if (!mediaFileName) return;
+    if (!filteredVideos.some((v) => v.path === mediaFileName)) {
+      setMediaFileName('');
+    }
+  }, [filteredVideos, mediaFileName, setMediaFileName]);
+
+  const handleLogin = async () => {
+    try {
+      const res = await axios.post<{ access_token: string }>('/api/auth/login', {
+        username: authUser,
+        password: authPass,
+      });
+      setAuthToken(res.data.access_token);
+      setLoggedIn(true);
+      setToast({ open: true, msg: '登入成功', type: 'success' });
+    } catch {
+      setToast({ open: true, msg: '登入失敗', type: 'error' });
+    }
+  };
+
+  const handleRegister = async () => {
+    const rn = authRealName.trim();
+    if (!rn) {
+      setToast({ open: true, msg: '請填寫顯示名稱（real_name）', type: 'warning' });
+      return;
+    }
+    try {
+      await axios.post('/api/auth/register', {
+        username: authUser,
+        password: authPass,
+        real_name: rn,
+      });
+      setToast({ open: true, msg: '註冊成功，請登入', type: 'success' });
+      setAuthMode('login');
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: { detail?: unknown } } };
+      const d = ax.response?.data?.detail;
+      const msg = typeof d === 'string' ? d : '註冊失敗';
+      setToast({ open: true, msg, type: 'error' });
+    }
+  };
+
+  const handleLogout = () => {
+    setAuthToken(null);
+    setLoggedIn(false);
+    setProjects([]);
+    setSelectedProjectId(null);
+    setVideoRows([]);
+    setMediaFileName('');
+  };
 
   useEffect(() => {
       if (mediaFileName) {
@@ -191,14 +383,14 @@ function App() {
 
   // ★ 上傳 Polling 邏輯
   const handleUploadConfirm = async () => {
-      if(!uploadFile || !uploadCaseName) return;
+      if (!uploadFile || !uploadCaseName || selectedProjectId == null) return;
       
       setIsUploading(true);
       setUploadProgress(0);
       setCurrentStep("Initiating Upload...");
 
       try {
-          await uploadVideo(uploadFile, uploadCaseName);
+          await uploadVideo(uploadFile, uploadCaseName, selectedProjectId);
           
           setCurrentStep("Upload Complete. Starting AI Pipeline...");
 
@@ -218,7 +410,7 @@ function App() {
                           setIsUploadOpen(false);
                           setUploadProgress(0);
                           setIsUploading(false);
-                          fetchVideos();
+                          loadVideoRows();
                           fetchTesters();
                       }, 1000);
                   } 
@@ -256,12 +448,13 @@ function App() {
         onSave={handleSaveWrapper}
         hasUnsavedChanges={hasUnsavedChanges}
         loading={loading}
+        onLogout={loggedIn ? handleLogout : undefined}
       />
 
       <Box sx={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
           
-          {/* === 左欄：側邊欄 (固定 40%) === */}
-          <Box sx={{ width: '40%', minWidth: '400px', display: 'flex', flexDirection: 'column', borderRight: '1px solid #334155', bgcolor: '#0f172a' }}>
+          {/* === 左欄：側邊欄 (固定 40%) — 播放器佔較大垂直空間，Chunks 區縮小可捲動 === */}
+          <Box sx={{ width: '40%', minWidth: '400px', height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #334155', bgcolor: '#0f172a', overflow: 'hidden' }}>
               
               {/* A. 影片播放器 */}
               <Box sx={{ 
@@ -270,8 +463,8 @@ function App() {
                   display: 'flex', 
                   justifyContent: 'center', 
                   alignItems: 'center', 
-                  minHeight: '300px', 
-                  flexShrink: 0,
+                  flex: '2 1 0%',
+                  minHeight: 280,
                   borderBottom: '1px solid #334155',
                   position: 'relative'
               }}>
@@ -280,7 +473,7 @@ function App() {
                           ref={videoRef} 
                           controls 
                           src={`${STATIC_BASE}/${encodeURI(mediaFileName)}`} 
-                          style={{ width: '100%', height: '100%', maxHeight: '45vh', objectFit: 'contain' }} 
+                          style={{ width: '100%', height: '100%', maxHeight: 'min(62vh, 100%)', minHeight: 240, objectFit: 'contain' }} 
                       />
                   ) : (
                       <Box sx={{ p: 4, color: '#64748b', textAlign: 'center', display:'flex', flexDirection:'column', alignItems:'center', gap:1 }}>
@@ -291,22 +484,100 @@ function App() {
               </Box>
 
               {/* B. 播放控制區 */}
-              <Box sx={{ p: 2, bgcolor: '#1e293b', borderBottom: '1px solid #334155' }}>
+              <Box sx={{ p: 2, bgcolor: '#1e293b', borderBottom: '1px solid #334155', flexShrink: 0 }}>
                   <Grid container spacing={1} alignItems="center">
+                    <Grid size={12}>
+                        <Select
+                            fullWidth
+                            size="small"
+                            value={selectedProjectId == null ? '' : String(selectedProjectId)}
+                            onChange={(e) => {
+                              const raw = String(e.target.value);
+                              setSelectedProjectId(raw === '' ? null : Number(raw));
+                            }}
+                            displayEmpty
+                            disabled={!loggedIn || projects.length === 0}
+                            sx={{ color: 'white', bgcolor: '#0f172a', '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }}
+                        >
+                            <MenuItem value="" disabled>
+                              {loggedIn ? '-- 選擇專案 --' : '-- 請先登入 --'}
+                            </MenuItem>
+                            {projects.map((p) => (
+                              <MenuItem key={p.id} value={String(p.id)}>
+                                {p.name}
+                              </MenuItem>
+                            ))}
+                        </Select>
+                    </Grid>
+                    <Grid size={6}>
+                        <Select
+                            fullWidth
+                            size="small"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            displayEmpty
+                            disabled={selectedProjectId == null}
+                            sx={{ color: 'white', bgcolor: '#0f172a', '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }}
+                        >
+                            <MenuItem value="">全部狀態</MenuItem>
+                            {Object.entries(STATUS_LABELS).map(([k, label]) => (
+                              <MenuItem key={k} value={k}>
+                                {label}
+                              </MenuItem>
+                            ))}
+                        </Select>
+                    </Grid>
+                    <Grid size={6}>
+                        <Select
+                            fullWidth
+                            size="small"
+                            value={assigneeFilter}
+                            onChange={(e) => setAssigneeFilter(e.target.value)}
+                            displayEmpty
+                            disabled={selectedProjectId == null}
+                            sx={{ color: 'white', bgcolor: '#0f172a', '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }}
+                        >
+                            <MenuItem value="">全部負責人</MenuItem>
+                            <MenuItem value="__unassigned__">未指派</MenuItem>
+                            {assigneeOptions.map((name) => (
+                              <MenuItem key={name} value={name}>
+                                {name}
+                              </MenuItem>
+                            ))}
+                        </Select>
+                    </Grid>
                     <Grid size={12}>
                         <Select 
                             fullWidth size="small" 
                             value={mediaFileName || ""} 
                             onChange={(e) => setMediaFileName(e.target.value)} 
                             displayEmpty
+                            disabled={selectedProjectId == null}
                             sx={{ color: 'white', bgcolor: '#0f172a', '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' } }}
                         >
-                            <MenuItem value="" disabled>-- Switch case (video) --</MenuItem>
-                            {availableVideos.map(v => (
-                                <MenuItem key={v.path} value={v.path}>{v.name}</MenuItem>
+                            <MenuItem value="" disabled>-- 切換影片 --</MenuItem>
+                            {filteredVideos.map((v: VideoRow) => (
+                                <MenuItem key={v.path} value={v.path}>
+                                  {v.name} · {STATUS_LABELS[v.status] ?? v.status}
+                                  {v.assignee_real_name ? ` · ${v.assignee_real_name}` : ''}
+                                </MenuItem>
                             ))}
                         </Select>
                     </Grid>
+                    {videoRows.length > 0 && filteredVideos.length === 0 && (
+                      <Grid size={12}>
+                        <Alert severity="info" sx={{ py: 0.5, fontSize: '0.8rem' }}>
+                          目前篩選下沒有符合的影片（資料庫共 {videoRows.length} 筆）。請改選「全部負責人」或調整狀態。
+                        </Alert>
+                      </Grid>
+                    )}
+                    {videoRows.length === 0 && selectedProjectId != null && loggedIn && (
+                      <Grid size={12}>
+                        <Alert severity="warning" sx={{ py: 0.5, fontSize: '0.8rem' }}>
+                          此專案尚無可列出的媒體。請上傳檔案；若 data/ 已有案例，請確認資料庫內有對應任務（首次部署需執行 seed 掃描）。
+                        </Alert>
+                      </Grid>
+                    )}
                     <Grid size={12} display="flex" gap={1} mt={1}>
                         <TextField 
                             fullWidth size="small" placeholder="Jump to (e.g. 1:20)" value={jumpInput} onChange={e=>setJumpInput(e.target.value)} onKeyDown={e=>e.key==='Enter'&&handleManualJump()}
@@ -323,8 +594,8 @@ function App() {
                   </Grid>
               </Box>
 
-              {/* C. 檔案列表區 */}
-              <Box sx={{ flex: 1, overflowY: 'auto', p: 2, bgcolor: '#0f172a' }}>
+              {/* C. 檔案列表區（較矮，內部捲動） */}
+              <Box sx={{ flex: '1 1 0%', minHeight: 0, maxHeight: '32vh', overflowY: 'auto', p: 2, bgcolor: '#0f172a' }}>
                   
                   <Box sx={{ mb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <Typography variant="subtitle2" sx={{ color: '#94a3b8', display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -549,6 +820,66 @@ function App() {
           </MenuItem>
       </Menu>
 
+      <Dialog open={!loggedIn} disableEscapeKeyDown maxWidth="xs" fullWidth>
+        <DialogTitle>登入或註冊</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          <Box sx={{ display: 'flex', gap: 1 }}>
+            <Button
+              size="small"
+              variant={authMode === 'login' ? 'contained' : 'outlined'}
+              onClick={() => setAuthMode('login')}
+            >
+              登入
+            </Button>
+            <Button
+              size="small"
+              variant={authMode === 'register' ? 'contained' : 'outlined'}
+              onClick={() => setAuthMode('register')}
+            >
+              註冊
+            </Button>
+          </Box>
+          <TextField
+            label="帳號"
+            value={authUser}
+            onChange={(e) => setAuthUser(e.target.value)}
+            fullWidth
+            autoComplete="username"
+          />
+          <TextField
+            label="密碼"
+            type="password"
+            value={authPass}
+            onChange={(e) => setAuthPass(e.target.value)}
+            fullWidth
+            autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+          />
+          {authMode === 'register' && (
+            <TextField
+              label="顯示名稱"
+              value={authRealName}
+              onChange={(e) => setAuthRealName(e.target.value)}
+              fullWidth
+            />
+          )}
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          {authMode === 'login' ? (
+            <Button variant="contained" onClick={handleLogin} disabled={!authUser || !authPass}>
+              登入
+            </Button>
+          ) : (
+            <Button
+              variant="contained"
+              onClick={handleRegister}
+              disabled={!authUser || !authPass || !authRealName.trim()}
+            >
+              註冊
+            </Button>
+          )}
+        </DialogActions>
+      </Dialog>
+
       {/* 上傳與進度 Dialog */}
       <Dialog 
           open={isUploadOpen} 
@@ -640,7 +971,7 @@ function App() {
           <DialogActions sx={{ px: 3, pb: 3 }}>
               <Button onClick={() => setIsUploadOpen(false)} disabled={isUploading} size="large">Cancel</Button>
               {!isUploading && (
-                  <Button onClick={handleUploadConfirm} variant="contained" size="large" disabled={!uploadFile || !uploadCaseName} startIcon={<PlayCircle />} sx={{ px: 4 }}>Run Pipeline</Button>
+                  <Button onClick={handleUploadConfirm} variant="contained" size="large" disabled={!uploadFile || !uploadCaseName || selectedProjectId == null} startIcon={<PlayCircle />} sx={{ px: 4 }}>Run Pipeline</Button>
               )}
           </DialogActions>
       </Dialog>

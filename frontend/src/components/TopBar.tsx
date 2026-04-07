@@ -1,6 +1,6 @@
 import React from 'react';
 import { Paper, Box, Typography, Divider, Button, CircularProgress } from '@mui/material';
-import { Dashboard, CloudUpload, Save } from '@mui/icons-material';
+import { Dashboard, CloudUpload, Save, Logout } from '@mui/icons-material';
 
 interface Props {
   allSpeakers: string[];
@@ -10,10 +10,18 @@ interface Props {
   onSave: () => void;
   hasUnsavedChanges: boolean;
   loading: boolean;
+  onLogout?: () => void;
 }
 
-export const TopBar: React.FC<Props> = ({ 
-  allSpeakers, speakerMap, onRenameSpeaker, onUploadOpen, onSave, hasUnsavedChanges, loading 
+export const TopBar: React.FC<Props> = ({
+  allSpeakers,
+  speakerMap,
+  onRenameSpeaker,
+  onUploadOpen,
+  onSave,
+  hasUnsavedChanges,
+  loading,
+  onLogout,
 }) => {
   return (
     <Paper square elevation={0} sx={{ height: 60, px: 3, display: 'flex', alignItems: 'center', justifyContent: 'space-between', bgcolor: '#1e293b', borderBottom: '1px solid #334155', flexShrink: 0 }}>
@@ -68,6 +76,16 @@ export const TopBar: React.FC<Props> = ({
       </Box>
 
       <Box sx={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+          {onLogout && (
+            <Button
+              variant="outlined"
+              startIcon={<Logout />}
+              onClick={onLogout}
+              sx={{ borderColor: '#475569', color: '#94a3b8', '&:hover': { borderColor: '#f87171', color: '#f87171' } }}
+            >
+              登出
+            </Button>
+          )}
           <Button 
             variant="outlined" 
             startIcon={<CloudUpload />} 

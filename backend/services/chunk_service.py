@@ -5,7 +5,7 @@ import json
 import os
 import glob
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from typing import Any, Dict, Iterable, List, Optional
 
 from config import DATA_DIR, get_real_path
 
@@ -17,6 +17,23 @@ def _chunk_sort_key(path: str) -> int:
         return int(parts[1])
     except Exception:
         return 0
+
+
+def case_name_from_relative_path(relative_path: str) -> str:
+    """由相對 DATA_DIR 的路徑取出第一層 case 資料夾名稱。"""
+    normalized = relative_path.replace("\\", "/").strip("/")
+    if not normalized:
+        return ""
+    return normalized.split("/")[0]
+
+
+def list_chunks_for_cases(case_names: Iterable[str]) -> List[str]:
+    """僅列出指定多個 case 的 chunk 路徑（合併、排序）。"""
+    names = sorted(set(case_names), reverse=True)
+    merged: List[str] = []
+    for name in names:
+        merged.extend(list_chunks(case=name))
+    return merged
 
 
 def list_chunks(case: Optional[str] = None) -> List[str]:

@@ -2,7 +2,19 @@
 API 請求／回應的 Pydantic 模型。
 """
 from typing import Dict, List, Optional
-from pydantic import BaseModel
+
+from pydantic import BaseModel, Field
+
+
+class RegisterBody(BaseModel):
+    username: str = Field(..., min_length=1, max_length=255)
+    password: str = Field(..., min_length=1)
+    real_name: str = Field(..., min_length=1, max_length=255)
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
 
 
 class TranscriptSegment(BaseModel):

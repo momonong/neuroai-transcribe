@@ -6,8 +6,27 @@ from typing import List, Dict
 
 from config import DATA_DIR, IGNORE_DIRS
 
-# 支援常見音視訊格式
-_VIDEO_EXTENSIONS = [".mp4", ".MP4", ".mov", ".MOV", ".avi", ".AVI"]
+# 與上傳 UI（video/*, audio/*）對齊，避免有 Task 但下拉選單掃不到檔案
+_MEDIA_EXTENSIONS = (
+    ".mp4",
+    ".MP4",
+    ".mov",
+    ".MOV",
+    ".avi",
+    ".AVI",
+    ".webm",
+    ".WEBM",
+    ".mkv",
+    ".MKV",
+    ".wav",
+    ".WAV",
+    ".mp3",
+    ".MP3",
+    ".m4a",
+    ".M4A",
+    ".flac",
+    ".FLAC",
+)
 
 
 def list_videos() -> List[Dict[str, str]]:
@@ -37,7 +56,7 @@ def list_videos() -> List[Dict[str, str]]:
                 if not os.path.exists(target_dir):
                     continue
                 for f in os.listdir(target_dir):
-                    if not any(f.endswith(ext) for ext in _VIDEO_EXTENSIONS):
+                    if not any(f.endswith(ext) for ext in _MEDIA_EXTENSIONS):
                         continue
                     if f.startswith("chunk_"):
                         continue
@@ -49,6 +68,43 @@ def list_videos() -> List[Dict[str, str]]:
                     video_files.append({"path": rel_path, "name": case_name})
 
     video_files.sort(key=lambda x: x["name"], reverse=True)
+    return video_files
+
+
+def list_videos_for_case(case_name: str) -> List[Dict[str, str]]:
+    """僅掃描指定 case 資料夾內的影片（相對路徑與 list_videos 相同）。"""
+    video_files: List[Dict[str, str]] = []
+    if not os.path.exists(DATA_DIR):
+        return video_files
+    if case_name in IGNORE_DIRS:
+        return video_files
+
+    case_path = os.path.join(DATA_DIR, case_name)
+    if not os.path.isdir(case_path):
+        return video_files
+
+    search_targets = []
+    source_dir = os.path.join(case_path, "source")
+    if os.path.exists(source_dir):
+        search_targets.append(source_dir)
+    search_targets.append(case_path)
+
+    seen_files = set()
+    for target_dir in search_targets:
+        if not os.path.exists(target_dir):
+            continue
+        for f in os.listdir(target_dir):
+            if not any(f.endswith(ext) for ext in _MEDIA_EXTENSIONS):
+                continue
+            if f.startswith("chunk_"):
+                continue
+            if f in seen_files:
+                continue
+            seen_files.add(f)
+            full_path = os.path.join(target_dir, f)
+            rel_path = os.path.relpath(full_path, DATA_DIR).replace("\\", "/")
+            video_files.append({"path": rel_path, "name": case_name})
+
     return video_files
 
 
