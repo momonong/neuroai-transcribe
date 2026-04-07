@@ -1,9 +1,6 @@
 import os
-import json
 import sys
 from pathlib import Path
-import time
-import traceback
 
 # Add project root to sys.path to allow importing core and shared modules
 root_dir = Path(__file__).resolve().parent.parent
@@ -21,27 +18,6 @@ from core.pipeline import PipelinePhase2
 from core.stitch import run_stitching_logic, aligned_to_stitch_shape
 from core.flag import run_anomaly_detector
 
-_DEBUG_LOG_PATH = "debug-341068.log"
-
-
-def _dbg_log(*, hypothesis_id: str, message: str, data: dict):
-    # #region agent log
-    try:
-        payload = {
-            "sessionId": "341068",
-            "runId": "pre-fix",
-            "hypothesisId": hypothesis_id,
-            "location": "core/run_pipeline.py",
-            "message": message,
-            "data": data,
-            "timestamp": int(time.time() * 1000),
-        }
-        with open(_DEBUG_LOG_PATH, "a", encoding="utf-8") as f:
-            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
-    except Exception:
-        pass
-    # #endregion
-
 
 class NeuroAIPipeline:
     def __init__(self):
@@ -55,18 +31,6 @@ class NeuroAIPipeline:
         force_reprocess: bool = False,
         skip_stitch: Optional[bool] = None,
     ) -> Optional[str]:
-        _dbg_log(
-            hypothesis_id="H0",
-            message="pipeline_run_enter",
-            data={
-                "video_path": str(video_path),
-                "case_name_in": case_name,
-                "force_reprocess": bool(force_reprocess),
-                "skip_stitch_arg": skip_stitch,
-                "env_DIARIZATION_BACKEND": os.getenv("DIARIZATION_BACKEND"),
-                "config_diarization_backend": getattr(config, "diarization_backend", None),
-            },
-        )
         if case_name is None:
             inferred = file_manager.infer_case_name_from_video_path(video_path)
             if inferred:
@@ -77,44 +41,21 @@ class NeuroAIPipeline:
         print(f" [Pipeline] Start: {case_name}")
 
         use_no_stitch = config.skip_stitch if skip_stitch is None else skip_stitch
-        _dbg_log(
-            hypothesis_id="H2",
-            message="resolved_skip_stitch",
-            data={"use_no_stitch": bool(use_no_stitch)},
-        )
         if use_no_stitch:
             print(" [Pipeline] No-Stitch 模式：aligned 逐段直通，不做規則併句")
 
         if force_reprocess:
             n = file_manager.clear_intermediate(case_name)
             print(f" [Pipeline] --force：已清空 intermediate（{n} 個項目）")
-            _dbg_log(
-                hypothesis_id="H3",
-                message="force_clear_intermediate",
-                data={"cleared_items": int(n), "case_name": case_name},
-            )
         
         file_manager.save_status(case_name, "Start", 0, "Initializing...")
 
         try:
             file_manager.save_status(case_name, "Splitting", 10, "Splitting audio...")
             chunk_metadata = self._step_1_split(video_path, case_name)
-            _dbg_log(
-                hypothesis_id="H1",
-                message="after_split",
-                data={
-                    "chunk_count": len(chunk_metadata) if chunk_metadata else 0,
-                    "case_name": case_name,
-                },
-            )
             if not chunk_metadata: return None
 
             self._step_2_process(chunk_metadata, case_name)
-            _dbg_log(
-                hypothesis_id="H1",
-                message="after_phase2",
-                data={"chunk_count": len(chunk_metadata), "case_name": case_name},
-            )
             
             file_manager.save_status(
                 case_name,
@@ -127,14 +68,6 @@ class NeuroAIPipeline:
             final_data = self._step_3_4_process_per_chunk(
                 chunk_metadata, case_name, skip_stitch=use_no_stitch
             )
-            _dbg_log(
-                hypothesis_id="H4",
-                message="after_phase3_4",
-                data={
-                    "final_segment_count": len(final_data) if isinstance(final_data, list) else None,
-                    "case_name": case_name,
-                },
-            )
 
             output_path = file_manager.get_output_file_path(case_name, "transcript.json")
             file_manager.save_json(final_data, output_path, backup=True)
@@ -146,16 +79,6 @@ class NeuroAIPipeline:
 
         except Exception as e:
             print(f"\n❌ [Pipeline] Failed: {e}")
-            _dbg_log(
-                hypothesis_id="H5",
-                message="pipeline_failed_exception",
-                data={
-                    "case_name": case_name,
-                    "exc_type": type(e).__name__,
-                    "exc_message": str(e),
-                    "traceback": traceback.format_exc(limit=50),
-                },
-            )
             file_manager.save_status(case_name, "Error", -1, str(e))
             return None
 

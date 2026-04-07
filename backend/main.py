@@ -10,7 +10,7 @@ if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
 import models  # noqa: F401 — 註冊 ORM 對應
-from database import engine
+from database import SessionLocal, engine
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -18,11 +18,20 @@ from models import Base
 
 from config import DATA_DIR, PROJECT_ROOT
 from routers import auth, chunks, export, projects, upload, videos
+from sync_disk_tasks import sync_case_tasks_for_default_project
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
+    db = SessionLocal()
+    try:
+        sync_case_tasks_for_default_project(db)
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
     yield
 
 

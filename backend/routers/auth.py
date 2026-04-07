@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import User
+from models import Project, ProjectUserLink, User
 from schemas import LoginBody, RegisterBody
 from security import create_access_token, hash_password, verify_password
 
@@ -28,6 +28,14 @@ def register(body: RegisterBody, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+
+    default_project = db.scalar(
+        select(Project).where(Project.name == "預設專案 (Default Project)")
+    )
+    if default_project is not None:
+        db.add(ProjectUserLink(user_id=user.id, project_id=default_project.id))
+        db.commit()
+
     return {"id": user.id, "username": user.username, "real_name": user.real_name}
 
 

@@ -15,7 +15,7 @@ import {
 import SkipNextIcon from '@mui/icons-material/SkipNext';
 import axios from 'axios';
 
-import { setAuthToken, TOKEN_KEY } from './apiClient';
+import { setAuthToken, TOKEN_KEY, updateCaseTask, type CaseTaskPatchResponse } from './apiClient';
 import { useTranscript } from './hooks/useTranscript';
 import { TranscriptItem } from './components/TranscriptItem';
 import { TopBar } from './components/TopBar';
@@ -30,8 +30,31 @@ type VideoRow = {
   name: string;
   case_name: string;
   status: string;
+  assignee_id: number | null;
   assignee_real_name: string | null;
 };
+
+/** 依 case_name 保留第一筆，避免下拉出現重複條目（與後端單案單檔回傳互為防呆） */
+function dedupeVideoRowsByCase(rows: VideoRow[]): VideoRow[] {
+  const seen = new Map<string, VideoRow>();
+  for (const r of rows) {
+    if (!seen.has(r.case_name)) seen.set(r.case_name, r);
+  }
+  return Array.from(seen.values()).sort((a, b) =>
+    a.name < b.name ? 1 : a.name > b.name ? -1 : 0,
+  );
+}
+
+const DEFAULT_PROJECT_NAME = '預設專案 (Default Project)';
+
+/** 登入／註冊表單：白底；抵消 Chrome 對密碼欄 autofill 的灰色底。 */
+const AUTH_DIALOG_TEXT_FIELD_SX = {
+  '& .MuiOutlinedInput-root': { backgroundColor: '#fff' },
+  '& input:-webkit-autofill': {
+    WebkitBoxShadow: '0 0 0 1000px #fff inset',
+    WebkitTextFillColor: 'rgba(0, 0, 0, 0.87)',
+  },
+} as const;
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: '未開始',
@@ -123,41 +146,17 @@ function App() {
     axios
       .get<VideoRow[]>('/api/videos', { params: { project_id: selectedProjectId } })
       .then((res) => {
-        // #region agent log
-        fetch('http://127.0.0.1:7665/ingest/7292f49e-61a1-4301-9a1e-6fdc30e4bb00', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4dbe56' },
-          body: JSON.stringify({
-            sessionId: '4dbe56',
-            location: 'App.tsx:loadVideoRows',
-            message: 'videos ok',
-            hypothesisId: 'H1',
-            data: { count: res.data?.length ?? 0, projectId: selectedProjectId },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
-        setVideoRows(res.data);
+        const rows = dedupeVideoRowsByCase(res.data);
+        setVideoRows(rows);
+        setMediaFileName((prev) => {
+          if (prev && rows.some((v) => v.path === prev)) return prev;
+          const demo = rows.find((v) => v.case_name === 'default_demo');
+          const pick = demo ?? rows[0];
+          return pick ? pick.path : '';
+        });
       })
-      .catch((err: unknown) => {
-        // #region agent log
-        const ax = err as { response?: { status?: number } };
-        fetch('http://127.0.0.1:7665/ingest/7292f49e-61a1-4301-9a1e-6fdc30e4bb00', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4dbe56' },
-          body: JSON.stringify({
-            sessionId: '4dbe56',
-            location: 'App.tsx:loadVideoRows',
-            message: 'videos err',
-            hypothesisId: 'H3',
-            data: { status: ax.response?.status, projectId: selectedProjectId },
-            timestamp: Date.now(),
-          }),
-        }).catch(() => {});
-        // #endregion
-        setVideoRows([]);
-      });
-  }, [selectedProjectId]);
+      .catch(() => setVideoRows([]));
+  }, [selectedProjectId, setMediaFileName]);
 
   useEffect(() => {
     if (!loggedIn) {
@@ -171,7 +170,9 @@ function App() {
         setProjects(res.data);
         setSelectedProjectId((prev) => {
           if (prev != null && res.data.some((p) => p.id === prev)) return prev;
-          return res.data.length ? res.data[0].id : null;
+          if (!res.data.length) return null;
+          const preferred = res.data.find((p) => p.name === DEFAULT_PROJECT_NAME);
+          return preferred?.id ?? res.data[0].id;
         });
       })
       .catch(() => setProjects([]));
@@ -196,35 +197,68 @@ function App() {
   }, [videoRows, currentProject]);
 
   const filteredVideos = useMemo(() => {
-    return videoRows.filter((v) => {
+    const filtered = videoRows.filter((v) => {
       if (statusFilter && v.status !== statusFilter) return false;
       if (assigneeFilter === '__unassigned__') return !v.assignee_real_name;
       if (assigneeFilter) return v.assignee_real_name === assigneeFilter;
       return true;
     });
+    const byCase = new Map<string, VideoRow>();
+    for (const v of filtered) {
+      if (!byCase.has(v.case_name)) byCase.set(v.case_name, v);
+    }
+    return Array.from(byCase.values()).sort((a, b) =>
+      a.name < b.name ? 1 : a.name > b.name ? -1 : 0,
+    );
   }, [videoRows, statusFilter, assigneeFilter]);
 
-  useEffect(() => {
-    // #region agent log
-    fetch('http://127.0.0.1:7665/ingest/7292f49e-61a1-4301-9a1e-6fdc30e4bb00', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Debug-Session-Id': '4dbe56' },
-      body: JSON.stringify({
-        sessionId: '4dbe56',
-        location: 'App.tsx:filterSnapshot',
-        message: 'video filter snapshot',
-        hypothesisId: 'H2',
-        data: {
-          videoRowsLen: videoRows.length,
-          filteredLen: filteredVideos.length,
-          assigneeFilter,
-          statusFilter,
-        },
-        timestamp: Date.now(),
-      }),
-    }).catch(() => {});
-    // #endregion
-  }, [videoRows, filteredVideos, assigneeFilter, statusFilter]);
+  const currentVideoRow = useMemo(() => {
+    if (!mediaFileName) return null;
+    const byPath = videoRows.find((v) => v.path === mediaFileName);
+    if (byPath) return byPath;
+    const caseName = mediaFileName.split('/')[0] ?? '';
+    return videoRows.find((v) => v.case_name === caseName) ?? null;
+  }, [mediaFileName, videoRows]);
+
+  const mergeCaseIntoVideoRows = useCallback((data: CaseTaskPatchResponse) => {
+    setVideoRows((prev) =>
+      prev.map((r) =>
+        r.case_name === data.case_name
+          ? {
+              ...r,
+              status: data.status,
+              assignee_id: data.assignee_id,
+              assignee_real_name: data.assignee_real_name,
+            }
+          : r,
+      ),
+    );
+  }, []);
+
+  const handleCurrentCaseStatusChange = async (newStatus: string) => {
+    const cn = currentVideoRow?.case_name;
+    if (!cn) return;
+    try {
+      const res = await updateCaseTask(cn, { status: newStatus });
+      mergeCaseIntoVideoRows(res);
+      setToast({ open: true, msg: '狀態已更新', type: 'success' });
+    } catch {
+      setToast({ open: true, msg: '更新狀態失敗', type: 'error' });
+    }
+  };
+
+  const handleCurrentCaseAssigneeChange = async (raw: string) => {
+    const cn = currentVideoRow?.case_name;
+    if (!cn) return;
+    const assignee_id = raw === '__unassigned__' ? null : Number(raw);
+    try {
+      const res = await updateCaseTask(cn, { assignee_id });
+      mergeCaseIntoVideoRows(res);
+      setToast({ open: true, msg: '負責人已更新', type: 'success' });
+    } catch {
+      setToast({ open: true, msg: '更新負責人失敗', type: 'error' });
+    }
+  };
 
   useEffect(() => {
     if (!mediaFileName) return;
@@ -455,6 +489,68 @@ function App() {
           
           {/* === 左欄：側邊欄 (固定 40%) — 播放器佔較大垂直空間，Chunks 區縮小可捲動 === */}
           <Box sx={{ width: '40%', minWidth: '400px', height: '100%', minHeight: 0, display: 'flex', flexDirection: 'column', borderRight: '1px solid #334155', bgcolor: '#0f172a', overflow: 'hidden' }}>
+
+              {currentVideoRow && (
+                <Box
+                  sx={{
+                    px: 2,
+                    py: 1.5,
+                    bgcolor: '#1e293b',
+                    borderBottom: '1px solid #334155',
+                    flexShrink: 0,
+                  }}
+                >
+                  <Typography variant="subtitle2" sx={{ color: '#94a3b8', mb: 1, display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                    <Movie sx={{ fontSize: 18, opacity: 0.9 }} />
+                    當前影片設定
+                  </Typography>
+                  <Grid container spacing={1}>
+                    <Grid size={6}>
+                      <Select
+                        fullWidth
+                        size="small"
+                        value={currentVideoRow.status}
+                        onChange={(e) => handleCurrentCaseStatusChange(String(e.target.value))}
+                        sx={{
+                          color: 'white',
+                          bgcolor: '#0f172a',
+                          '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
+                        }}
+                      >
+                        {Object.entries(STATUS_LABELS).map(([k, label]) => (
+                          <MenuItem key={k} value={k}>
+                            {label}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </Grid>
+                    <Grid size={6}>
+                      <Select
+                        fullWidth
+                        size="small"
+                        value={
+                          currentVideoRow.assignee_id == null
+                            ? '__unassigned__'
+                            : String(currentVideoRow.assignee_id)
+                        }
+                        onChange={(e) => handleCurrentCaseAssigneeChange(String(e.target.value))}
+                        sx={{
+                          color: 'white',
+                          bgcolor: '#0f172a',
+                          '.MuiOutlinedInput-notchedOutline': { borderColor: '#475569' },
+                        }}
+                      >
+                        <MenuItem value="__unassigned__">未指派</MenuItem>
+                        {(currentProject?.members ?? []).map((m) => (
+                          <MenuItem key={m.user_id} value={String(m.user_id)}>
+                            {m.real_name}
+                          </MenuItem>
+                        ))}
+                      </Select>
+                    </Grid>
+                  </Grid>
+                </Box>
+              )}
               
               {/* A. 影片播放器 */}
               <Box sx={{ 
@@ -845,6 +941,7 @@ function App() {
             onChange={(e) => setAuthUser(e.target.value)}
             fullWidth
             autoComplete="username"
+            sx={AUTH_DIALOG_TEXT_FIELD_SX}
           />
           <TextField
             label="密碼"
@@ -853,6 +950,7 @@ function App() {
             onChange={(e) => setAuthPass(e.target.value)}
             fullWidth
             autoComplete={authMode === 'login' ? 'current-password' : 'new-password'}
+            sx={AUTH_DIALOG_TEXT_FIELD_SX}
           />
           {authMode === 'register' && (
             <TextField
@@ -860,6 +958,7 @@ function App() {
               value={authRealName}
               onChange={(e) => setAuthRealName(e.target.value)}
               fullWidth
+              sx={AUTH_DIALOG_TEXT_FIELD_SX}
             />
           )}
         </DialogContent>

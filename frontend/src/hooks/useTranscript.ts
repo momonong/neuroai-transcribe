@@ -27,10 +27,17 @@ export const useTranscript = (projectId: number | null) => {
       .get(`${API_BASE}/temp/chunks`, { params: { project_id: projectId } })
       .then((res) => {
         if (res.data.files) {
-          setChunks(res.data.files);
+          const files: string[] = res.data.files;
+          setChunks(files);
           setSelectedChunk((prev) => {
-            if (prev && res.data.files.includes(prev)) return prev;
-            return res.data.files.length > 0 ? res.data.files[0] : '';
+            if (prev && files.includes(prev)) return prev;
+            const caseOf = (p: string) => p.replace(/\\/g, '/').split('/')[0] || '';
+            const demoFiles = files.filter((f) => caseOf(f) === 'default_demo');
+            const ordered =
+              demoFiles.length > 0
+                ? [...demoFiles, ...files.filter((f) => !demoFiles.includes(f))]
+                : files;
+            return ordered.length > 0 ? ordered[0] : '';
           });
         }
       })

@@ -3,7 +3,9 @@ API 請求／回應的 Pydantic 模型。
 """
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from models import TaskStatus
 
 
 class RegisterBody(BaseModel):
@@ -34,3 +36,12 @@ class SavePayload(BaseModel):
     filename: str  # 相對路徑 (CaseName/chunk_x.json)
     speaker_mapping: Dict[str, str]
     segments: List[TranscriptSegment]
+
+
+class TaskUpdate(BaseModel):
+    """PATCH 任務：僅傳入要更新的欄位；assignee_id 傳 null 表示未指派。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Optional[TaskStatus] = None
+    assignee_id: Optional[int] = None
