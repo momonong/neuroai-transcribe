@@ -2,11 +2,8 @@
 後端路徑與常數設定。
 """
 import os
-from pathlib import Path
 
 from dotenv import load_dotenv
-
-load_dotenv()
 
 # 取得當前檔案 (backend/config.py) 的絕對路徑
 _CURRENT_FILE = os.path.abspath(__file__)
@@ -14,6 +11,9 @@ _CURRENT_FILE = os.path.abspath(__file__)
 BACKEND_DIR = os.path.dirname(_CURRENT_FILE)
 # 取得專案根目錄 (backend 的上一層)
 PROJECT_ROOT = os.path.dirname(BACKEND_DIR)
+
+# 一律從專案根載入 .env（與 docker-compose 預期位置一致），避免 cwd 不同時吃不到設定
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
 
 # 設定 DATA_DIR 為專案根目錄下的 data
 DATA_DIR = os.path.join(PROJECT_ROOT, "data")
@@ -25,10 +25,19 @@ os.makedirs(DATA_DIR, exist_ok=True)
 IGNORE_DIRS = {"temp_chunks", "db", "text", "__pycache__", "output", "test-complete-pipeline"}
 
 # PostgreSQL（docker-compose 內為 db:5432；本機開發可設 DATABASE_URL 指向 localhost）
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql+psycopg://neuroai:neuroai_secret@localhost:5432/neuroai_db",
-)
+DB_USER = os.getenv("DB_USER")
+DB_PASS = os.getenv("DB_PASS")
+DB_NAME = os.getenv("DB_NAME")
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    if DB_USER and DB_PASS and DB_NAME:
+        DATABASE_URL = (
+            f"postgresql+psycopg://{DB_USER}:{DB_PASS}@localhost:5432/{DB_NAME}"
+        )
+    else:
+        DATABASE_URL = (
+            "postgresql+psycopg://neuroai:neuroai_secret@localhost:5432/neuroai_db"
+        )
 
 JWT_SECRET = os.getenv("JWT_SECRET", "dev-secret-change-in-production")
 JWT_ALGORITHM = "HS256"

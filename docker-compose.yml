@@ -5,13 +5,13 @@ services:
     image: postgres:18-alpine
     container_name: neuroai_db
     environment:
-      POSTGRES_USER: neuroai
-      POSTGRES_PASSWORD: neuroai_secret
-      POSTGRES_DB: neuroai_db
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASS}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - neuroai_pg_data:/var/lib/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U neuroai -d neuroai_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -27,11 +27,14 @@ services:
       - "8001"
     volumes:
       - ./data:/app/data
+    # 專案根 .env 變數送進容器；下方 environment 同名項會覆寫（DATABASE_URL 仍指向 db:5432）
+    env_file:
+      - .env
     environment:
       - PYTHONPATH=/app
       - RUN_PIPELINE_AFTER_UPLOAD=false
-      - DATABASE_URL=postgresql+psycopg://neuroai:neuroai_secret@db:5432/neuroai_db
-      - JWT_SECRET=change-me-in-production
+      - DATABASE_URL=postgresql+psycopg://${DB_USER}:${DB_PASS}@db:5432/${DB_NAME}
+      - JWT_SECRET=${JWT_SECRET}
     working_dir: /app/backend
     depends_on:
       db:

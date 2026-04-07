@@ -6,12 +6,22 @@ from pathlib import Path
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.append(PROJECT_ROOT)
 
+# 必須早於 import backend.database：engine 建立時會讀 config.DATABASE_URL
+from dotenv import load_dotenv
+
+load_dotenv(os.path.join(PROJECT_ROOT, ".env"))
+
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 
 # 匯入你剛建立好的 Database 與 Models
 from backend.database import SessionLocal, engine
 from backend.models import Base, User, Project, ProjectUserLink, Task, TaskStatus
+
+# 資料庫連線與 docker-compose / 本機後端相同：由 config.DATABASE_URL（環境變數 DATABASE_URL）決定。
+# Docker 時請在 .env 設 DB_USER / DB_PASS / DB_NAME 供 compose 建立 Postgres，並讓 DATABASE_URL 與之一致。
+ADMIN_USER = os.getenv("ADMIN_USER", "admin")
+ADMIN_PASS = os.getenv("ADMIN_PASS", "admin_password")
 
 # 密碼雜湊設定 (確保與你 backend/routers/auth.py 的設定一致)
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
@@ -28,9 +38,9 @@ def seed_database():
     db: Session = SessionLocal()
     try:
         # 1. 檢查是否已經初始化過 (冪等性檢查)
-        admin_user = db.query(User).filter(User.username == "admin").first()
+        admin_user = db.query(User).filter(User.username == ADMIN_USER).first()
         if admin_user:
-            print("✅ 資料庫已經存在 admin 帳號，跳過初始化。")
+            print(f"✅ 資料庫已經存在 {ADMIN_USER} 帳號，跳過初始化。")
             return
 
         # 2. 建立預設專案 (Project)
@@ -43,16 +53,15 @@ def seed_database():
         print(f"👉 建立專案：{default_project.name}")
 
         # 3. 建立 Admin 帳號 (User)
-        admin_password = "admin_password" # 建議登入後修改
         admin_user = User(
-            username="admin",
-            password_hash=pwd_context.hash(admin_password),
+            username=ADMIN_USER,
+            password_hash=pwd_context.hash(ADMIN_PASS),
             real_name="系統管理員",
             role="admin"
         )
         db.add(admin_user)
-        db.flush() # 取得 user 的 id
-        print(f"👉 建立管理員帳號：admin / 密碼：{admin_password}")
+        db.flush() 
+        print(f"👉 建立網頁管理員帳號：{ADMIN_USER} / 密碼：{ADMIN_PASS}")
 
         # 4. 綁定 Admin 與 預設專案 (ProjectUserLink)
         link = ProjectUserLink(user_id=admin_user.id, project_id=default_project.id)
