@@ -1,11 +1,11 @@
 import React, { memo } from 'react';
 import { 
   Paper, IconButton, TextField, Typography, Box, 
-  Tooltip, Button 
+  Tooltip, Button, CircularProgress 
 } from '@mui/material';
 import { 
   PlayArrow, Sync, Person, Delete, Add, 
-  AutoFixHigh, Check, Close 
+  AutoFixHigh, Check, Close, GraphicEq
 } from '@mui/icons-material';
 
 import type { TranscriptSegment } from '../types';
@@ -24,6 +24,8 @@ interface TranscriptItemProps {
   onDelete: (index: number) => void;
   onAddAfter: (index: number) => void;
   onResolveFlag: (index: number, action: 'accept' | 'ignore') => void;
+  onReinfer?: (index: number) => void | Promise<void>;
+  reinferLoading?: boolean;
 }
 
 // Helper: Format seconds to MM:SS.ss
@@ -45,7 +47,7 @@ const formatTimestamp = (totalSeconds: number): string => {
 export const TranscriptItem = memo<TranscriptItemProps>(({
   index, segment, videoOffset, displaySpeaker, isDoctor,
   onTextChange, onSyncTime, onSyncEndTime, onJumpToTime, onSpeakerClick, onDelete, onAddAfter,
-  onResolveFlag
+  onResolveFlag, onReinfer, reinferLoading = false,
 }) => {
   
   const absStart = segment.start + videoOffset;
@@ -145,7 +147,8 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
           minHeight: 40,
           borderRadius: 1.5,
           bgcolor: '#f8fafc',
-          border: '1px solid #f1f5f9'
+          border: '1px solid #f1f5f9',
+          width: '100%',
         }}
       >
         {/* 開始時間 */}
@@ -185,6 +188,48 @@ export const TranscriptItem = memo<TranscriptItemProps>(({
             </IconButton>
           </Tooltip>
         </Box>
+
+        {onReinfer && (
+          <Box sx={{ ml: 'auto', display: 'flex', alignItems: 'center', pl: 1, py: 0.5 }}>
+            <Tooltip
+              title={
+                reinferLoading
+                  ? '辨識進行中…'
+                  : '依上方 Start／End 時間範圍重新執行 Whisper 辨識（後端 segment_reinfer 實作後生效）'
+              }
+            >
+              <span>
+                <Button
+                  size="small"
+                  variant="outlined"
+                  startIcon={
+                    reinferLoading ? (
+                      <CircularProgress size={16} thickness={4} sx={{ color: '#0ea5e9' }} />
+                    ) : (
+                      <GraphicEq sx={{ fontSize: 18 }} />
+                    )
+                  }
+                  onClick={() => void onReinfer(index)}
+                  disabled={
+                    reinferLoading ||
+                    segment.end <= segment.start
+                  }
+                  sx={{
+                    textTransform: 'none',
+                    fontSize: '0.75rem',
+                    py: 0.35,
+                    px: 1,
+                    borderColor: '#cbd5e1',
+                    color: '#334155',
+                    '&:hover': { borderColor: '#0ea5e9', color: '#0ea5e9', bgcolor: '#f0f9ff' },
+                  }}
+                >
+                  {reinferLoading ? '辨識中…' : '再次語音辨識'}
+                </Button>
+              </span>
+            </Tooltip>
+          </Box>
+        )}
       </Box>
 
       {/* AI Suggestion Block */}

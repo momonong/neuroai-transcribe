@@ -4,6 +4,12 @@ import type { ChunkData, TranscriptSegment, ChunkTimepoint } from '../types';
 
 const API_BASE = `/api`;
 
+export type SegmentReinferResponse = {
+  ok: boolean;
+  text: string | null;
+  message: string;
+};
+
 export const useTranscript = (projectId: number | null) => {
   const [chunks, setChunks] = useState<string[]>([]);
   const [selectedChunk, setSelectedChunk] = useState<string>('');
@@ -17,6 +23,7 @@ export const useTranscript = (projectId: number | null) => {
   const [error, setError] = useState<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [existingTesters, setExistingTesters] = useState<string[]>([]);
+  const [reinferLoadingIndex, setReinferLoadingIndex] = useState<number | null>(null);
 
   const fetchChunks = useCallback(() => {
     if (projectId == null) {
@@ -209,6 +216,51 @@ export const useTranscript = (projectId: number | null) => {
     setHasUnsavedChanges(false);
   };
 
+  const reinferSegment = useCallback(
+    async (index: number): Promise<SegmentReinferResponse> => {
+      if (!selectedChunk) {
+        return { ok: false, text: null, message: '未選擇要編輯的 chunk' };
+      }
+      const seg = segments[index];
+      if (!seg) {
+        return { ok: false, text: null, message: '找不到該片段' };
+      }
+      if (seg.end <= seg.start) {
+        return {
+          ok: false,
+          text: null,
+          message: '結束時間必須大於開始時間，請先調整時間範圍',
+        };
+      }
+      setReinferLoadingIndex(index);
+      try {
+        const { data } = await axios.post<SegmentReinferResponse>(`${API_BASE}/temp/reinfer-segment`, {
+          filename: selectedChunk,
+          start_sec: seg.start,
+          end_sec: seg.end,
+          sentence_id: seg.sentence_id,
+        });
+        if (data.text != null && String(data.text).trim() !== '') {
+          updateText(index, String(data.text).trim());
+        }
+        return data;
+      } catch (e: unknown) {
+        const ax = e as { response?: { data?: { detail?: unknown } } };
+        const d = ax.response?.data?.detail;
+        const msg =
+          typeof d === 'string'
+            ? d
+            : Array.isArray(d)
+              ? JSON.stringify(d)
+              : '重新辨識請求失敗';
+        return { ok: false, text: null, message: msg };
+      } finally {
+        setReinferLoadingIndex(null);
+      }
+    },
+    [selectedChunk, segments, updateText],
+  );
+
   const uploadVideo = async (file: File, caseName: string, pid: number) => {
     const formData = new FormData();
     formData.append('file', file);
@@ -251,5 +303,7 @@ export const useTranscript = (projectId: number | null) => {
     fetchChunks,
     updateSegmentFull,
     resolveFlag,
+    reinferSegment,
+    reinferLoadingIndex,
   };
 };

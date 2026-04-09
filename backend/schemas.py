@@ -3,7 +3,7 @@ API 請求／回應的 Pydantic 模型。
 """
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from models import TaskStatus
 
@@ -45,6 +45,31 @@ class SavePayload(BaseModel):
     filename: str  # 相對路徑 (CaseName/chunk_x.json)
     speaker_mapping: Dict[str, str]
     segments: List[TranscriptSegment]
+
+
+class SegmentReinferRequest(BaseModel):
+    """請求對 chunk 内一段時間（與前端 segment.start/end 同座標系）重新做 Whisper 辨識。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    filename: str = Field(..., min_length=1, description="chunk 檔相對路徑，與 /api/temp/save 相同")
+    start_sec: float = Field(..., ge=0, description="相對於該 chunk 時間軸的起始秒")
+    end_sec: float = Field(..., ge=0, description="相對於該 chunk 時間軸的結束秒")
+    sentence_id: Optional[float] = Field(None, description="前端 segment sentence_id，供實作端對位")
+
+    @model_validator(mode="after")
+    def end_after_start(self):
+        if self.end_sec <= self.start_sec:
+            raise ValueError("結束時間必須大於開始時間")
+        return self
+
+
+class SegmentReinferResponse(BaseModel):
+    """實作 Whisper 後可回傳辨識文字；未實作時 text 為 null。"""
+
+    ok: bool = True
+    text: Optional[str] = None
+    message: str = ""
 
 
 class AdminCreateProjectBody(BaseModel):

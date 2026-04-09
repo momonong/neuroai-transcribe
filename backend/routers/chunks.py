@@ -10,8 +10,9 @@ from sqlalchemy.orm import Session
 from database import get_db
 from deps import assert_project_member, assert_user_can_access_case, get_current_user
 from models import Task, User
-from schemas import SavePayload
+from schemas import SavePayload, SegmentReinferRequest, SegmentReinferResponse
 from services import chunk_service
+from services.segment_reinfer import run_segment_reinfer
 
 router = APIRouter(prefix="/api", tags=["chunks"])
 
@@ -67,3 +68,26 @@ def save_chunk(
         return chunk_service.save_chunk(payload)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/temp/reinfer-segment", response_model=SegmentReinferResponse)
+def reinfer_segment(
+    body: SegmentReinferRequest,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """
+    依目前 segment 的時間範圍（chunk 相對秒）觸發重新語音辨識。
+    實際 Whisper 邏輯見 services.segment_reinfer.run_segment_reinfer。
+    """
+    case_name = chunk_service.case_name_from_relative_path(body.filename)
+    assert_user_can_access_case(db, user, case_name)
+
+    raw = run_segment_reinfer(
+        case_name=case_name,
+        chunk_filename=body.filename,
+        start_sec=body.start_sec,
+        end_sec=body.end_sec,
+        sentence_id=body.sentence_id,
+    )
+    return SegmentReinferResponse.model_validate(raw)

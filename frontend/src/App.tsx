@@ -137,6 +137,8 @@ function App() {
     existingTesters,
     fetchTesters,
     resolveFlag,
+    reinferSegment,
+    reinferLoadingIndex,
   } = useTranscript(selectedProjectId);
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -465,6 +467,22 @@ function App() {
     const newRelative = Math.max(0, currentAbs - videoOffset);
     updateSegmentEndTime(index, newRelative);
   }, [videoOffset, updateSegmentEndTime]);
+
+  const handleReinferSegment = useCallback(
+    async (index: number) => {
+      const res = await reinferSegment(index);
+      if (!res.ok) {
+        setToast({ open: true, msg: res.message || '重新辨識失敗', type: 'error' });
+        return;
+      }
+      if (res.text != null && String(res.text).trim() !== '') {
+        setToast({ open: true, msg: '已套用新的辨識文字', type: 'success' });
+      } else if (res.message) {
+        setToast({ open: true, msg: res.message, type: 'info' });
+      }
+    },
+    [reinferSegment],
+  );
 
   const handleManualJump = () => {
     if (!videoRef.current || !jumpInput) return;
@@ -992,7 +1010,9 @@ function App() {
                         onSpeakerClick={handleSpeakerClick}
                         onDelete={deleteSegment}
                         onAddAfter={addSegment}
-                        onResolveFlag={resolveFlag} 
+                        onResolveFlag={resolveFlag}
+                        onReinfer={handleReinferSegment}
+                        reinferLoading={reinferLoadingIndex === index}
                     />
                 ))}
               </Box>
