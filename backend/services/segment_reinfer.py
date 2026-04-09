@@ -1,11 +1,17 @@
-"""
-Segment 時間區間重新辨識（Whisper）掛鉤。
-
-請在此模組實作實際音訊裁切與 Whisper 呼叫；目前僅回傳佔位結果，API 已就緒。
-"""
 from __future__ import annotations
 
 from typing import Any
+from pathlib import Path
+from shared.file_manager import file_manager
+
+
+def _get_original_audio_path(case_name: str) -> Path:
+    """Helper function to get the original audio/video path for a given case."""
+    video_files_info = file_manager.find_video_files()
+    for video_info in video_files_info:
+        if video_info["case_name"] == case_name:
+            return Path(video_info["path"])
+    raise FileNotFoundError(f"Original audio/video file not found for case: {case_name}")
 
 
 def run_segment_reinfer(
@@ -27,9 +33,89 @@ def run_segment_reinfer(
     Returns:
         與 SegmentReinferResponse 對齊的 dict。
     """
-    _ = (case_name, chunk_filename, start_sec, end_sec, sentence_id)
-    return {
-        "ok": True,
-        "text": None,
-        "message": "Whisper 重新辨識尚未接線：請在 backend/services/segment_reinfer.py 實作 run_segment_reinfer。",
-    }
+    try:
+        # 1. Get the original video/audio file path
+        original_audio_path = _get_original_audio_path(case_name)
+
+        # 2. Extract chunk start and end times from chunk_filename
+        # chunk_filename format might be chunk_X_startMS_endMS... or chunk_X_flagged_for_human.json
+        parts = Path(chunk_filename).stem.split('_')
+        if len(parts) < 2:
+            raise ValueError(f"Chunk filename '{chunk_filename}' does not match expected format.")
+        
+        chunk_start_ms = 0
+        chunk_end_ms = 60000
+        parsed_from_name = False
+        
+        if len(parts) >= 4 and parts[2].isdigit() and parts[3].isdigit():
+            chunk_start_ms = int(parts[2])
+            chunk_end_ms = int(parts[3])
+            parsed_from_name = True
+        else:
+            # Fallback: Find the original wav file in intermediate folder
+            chunk_idx = parts[1]
+            inter_dir = file_manager.get_intermediate_dir(case_name)
+            wav_files = list(inter_dir.glob(f"chunk_{chunk_idx}_*.wav"))
+            if wav_files:
+                wav_parts = wav_files[0].stem.split('_')
+                if len(wav_parts) >= 4 and wav_parts[2].isdigit() and wav_parts[3].isdigit():
+                    chunk_start_ms = int(wav_parts[2])
+                    chunk_end_ms = int(wav_parts[3])
+                    parsed_from_name = True
+
+        if not parsed_from_name:
+            print(f"Warning: Could not parse exact start/end for '{chunk_filename}', defaulting to 0-60s.")
+
+        # 3. Calculate absolute segment times in the original audio
+        absolute_start_sec = (chunk_start_ms / 1000.0) + start_sec
+        absolute_end_sec = (chunk_start_ms / 1000.0) + end_sec
+
+        # 4. Call Whisper service via HTTP (Docker microservice)
+        import urllib.request
+        import json
+        import os
+        
+        # Determine whisper service URL. Inside docker network, it's 'whisper'
+        # Default to localhost if running backend locally.
+        whisper_host = os.getenv("WHISPER_SERVICE_HOST", "whisper")
+        whisper_port = os.getenv("WHISPER_SERVICE_PORT", "8002")
+        url = f"http://{whisper_host}:{whisper_port}/reinfer"
+        
+        payload = {
+            "wav_path": str(original_audio_path.resolve()),
+            "start_sec": absolute_start_sec,
+            "end_sec": absolute_end_sec
+        }
+        
+        req = urllib.request.Request(
+            url, 
+            data=json.dumps(payload).encode('utf-8'),
+            headers={'Content-Type': 'application/json'},
+            method='POST'
+        )
+        
+        try:
+            with urllib.request.urlopen(req) as response:
+                res_data = json.loads(response.read().decode('utf-8'))
+                
+            if not res_data.get("ok"):
+                raise RuntimeError(res_data.get("message", "Whisper service returned error"))
+                
+            text = res_data.get("text", "")
+            
+            return {
+                "ok": True,
+                "text": text,
+                "message": "重新辨識成功",
+                "absolute_start_sec": absolute_start_sec,
+                "absolute_end_sec": absolute_end_sec,
+            }
+        except Exception as e:
+            raise RuntimeError(f"呼叫 Whisper 服務失敗: {e}")
+
+    except FileNotFoundError as e:
+        return {"ok": False, "text": None, "message": str(e)}
+    except ValueError as e:
+        return {"ok": False, "text": None, "message": f"解析 chunk 資訊失敗: {e}"}
+    except Exception as e:
+        return {"ok": False, "text": None, "message": f"重新辨識處理失敗: {e}"}

@@ -1,5 +1,3 @@
-# docker push momonong/neuroai-backend:latest
-# docker push momonong/neuroai-frontend:latest
 services:
   db:
     image: postgres:18-alpine
@@ -21,13 +19,12 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
-    image: momonong/neuroai-backend:latest
+    image: momonong/neuroai-backend:${IMAGE_TAG:-latest}
     container_name: neuroai_backend
     expose:
       - "8001"
     volumes:
       - ./data:/app/data
-    # 專案根 .env 變數送進容器；下方 environment 同名項會覆寫（DATABASE_URL 仍指向 db:5432）
     env_file:
       - .env
     environment:
@@ -41,11 +38,37 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  whisper:
+    build:
+      context: ./models/whisper
+      dockerfile: Dockerfile
+    image: momonong/neuroai-whisper:${IMAGE_TAG:-latest}
+    container_name: neuroai_whisper
+    expose:
+      - "8002"
+    volumes:
+      - ./data:/app/data
+      - whisper_model_cache:/app/models_cache
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - WHISPER_MODEL=large-v3
+      - MODEL_CACHE_DIR=/app/models_cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    image: momonong/neuroai-frontend:latest
+    image: momonong/neuroai-frontend:${IMAGE_TAG:-latest}
     container_name: neuroai_frontend
     ports:
       - "55688:80"
@@ -55,3 +78,4 @@ services:
 
 volumes:
   neuroai_pg_data:
+  whisper_model_cache:
