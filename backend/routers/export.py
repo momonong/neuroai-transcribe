@@ -4,6 +4,7 @@ GET /api/export/{case_name}/{dataset_type}
 import io
 import json
 import urllib.parse
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -38,11 +39,27 @@ async def export_dataset(
     if not suffix:
         raise HTTPException(status_code=400, detail="Unknown dataset type")
 
-    merged_data = file_manager.merge_chunks(case_name, suffix)
+    export_result = file_manager.merge_chunks(case_name, suffix)
+    merged_data = export_result.get("segments", [])
+    speaker_mapping = export_result.get("speaker_mapping", {})
+
     if not merged_data:
         raise HTTPException(status_code=404, detail=f"No data found for {dataset_type}")
 
-    json_str = json.dumps(merged_data, ensure_ascii=False, indent=2)
+    # Wrap with metadata
+    result = {
+        "metadata": {
+            "case_name": case_name,
+            "dataset_type": dataset_type,
+            "export_time": datetime.now().isoformat(),
+            "count": len(merged_data),
+            "speaker_mapping": speaker_mapping,
+        },
+        "segments": merged_data,
+        "speaker_mapping": speaker_mapping,
+    }
+
+    json_str = json.dumps(result, ensure_ascii=False, indent=2)
     filename = f"{case_name}_FULL_{dataset_type}.json"
     encoded_filename = urllib.parse.quote(filename)
 

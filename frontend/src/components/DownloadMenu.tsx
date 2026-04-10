@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import axios from 'axios';
 import { 
     IconButton, Menu, MenuItem, ListItemIcon, ListItemText, 
     Divider, Tooltip, Typography, Box 
@@ -23,9 +24,44 @@ export const DownloadMenu = ({ selectedCase }: DownloadMenuProps) => {
         setAnchorEl(null);
     };
 
-    const handleDownload = (type: string) => {
+    const handleDownload = async (type: string) => {
         if (!selectedCase) return;
-        window.open(`/api/export/${selectedCase}/${type}`);
+        try {
+            const response = await axios.get(`/api/export/${selectedCase}/${type}`, {
+                responseType: 'blob',
+            });
+            
+            // Create a temporary link to trigger the download
+            const url = window.URL.createObjectURL(new Blob([response.data]));
+            const link = document.createElement('a');
+            link.href = url;
+            
+            // Extract filename from content-disposition if possible
+            const contentDisposition = response.headers['content-disposition'];
+            let filename = `${selectedCase}_FULL_${type}.json`;
+            if (contentDisposition) {
+                const filenameRegex = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/;
+                const matches = filenameRegex.exec(contentDisposition);
+                if (matches != null && matches[1]) {
+                    filename = matches[1].replace(/['"]/g, '');
+                    // Handle UTF-8 encoded filename if present (filename*)
+                    if (filename.startsWith("UTF-8''")) {
+                        filename = decodeURIComponent(filename.substring(7));
+                    }
+                }
+            }
+            
+            link.setAttribute('download', filename);
+            document.body.appendChild(link);
+            link.click();
+            
+            // Cleanup
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(url);
+        } catch (error) {
+            console.error('Download failed:', error);
+            alert('下載失敗，請檢查權限或登入狀態。');
+        }
         handleClose();
     };
 

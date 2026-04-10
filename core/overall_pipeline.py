@@ -213,19 +213,30 @@ class OverallPipeline:
         print(f"\n✅ AI 處理完成: {success_count}/{len(chunk_metadata)} 個片段成功")
         return aligned_files
     
-    def step3_merge_chunks(self, aligned_files: List[str]) -> List[Dict[str, Any]]:
+    def step3_merge_chunks(self, aligned_files: List[str]) -> Dict[str, Any]:
         """步驟 5: 合併所有 chunk 的結果"""
         print(f"\n🔗 [步驟 5/6] 合併片段...")
         print("=" * 50)
         all_segments = []
-        
+        all_speaker_mapping = {}
+
         for aligned_file in aligned_files:
             if not os.path.exists(aligned_file):
                 print(f"⚠️ 跳過不存在的檔案: {aligned_file}")
                 continue
             try:
                 with open(aligned_file, 'r', encoding='utf-8') as f:
-                    segments = json.load(f)
+                    data = json.load(f)
+
+                # 如果 data 是字典且包含 speaker_mapping
+                if isinstance(data, dict):
+                    segments = data.get("segments", [])
+                    mapping = data.get("speaker_mapping", {})
+                    all_speaker_mapping.update(mapping)
+                else:
+                    # 舊格式或純 segments 列表
+                    segments = data
+
                 for segment in segments:
                     if 'sentence_id' not in segment:
                         segment['sentence_id'] = len(all_segments)
@@ -246,7 +257,10 @@ class OverallPipeline:
         for i, segment in enumerate(all_segments):
             segment['sentence_id'] = i
         print(f"✅ 合併完成，總共 {len(all_segments)} 個片段")
-        return all_segments
+        return {
+            "segments": all_segments,
+            "speaker_mapping": all_speaker_mapping
+        }
     
     def step4_stitch_and_flag(self, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """步驟 6: 文字整理和異常標記"""
@@ -269,7 +283,7 @@ class OverallPipeline:
             print(f"❌ 規則併句和標記失敗: {e}")
             return segments
     
-    def save_results(self, final_segments: List[Dict[str, Any]]) -> str:
+    def save_results(self, final_segments: List[Dict[str, Any]], speaker_mapping: Dict[str, str] = None) -> str:
         """儲存最終結果"""
         print(f"\n💾 儲存最終結果...")
         print("=" * 30)
@@ -279,7 +293,7 @@ class OverallPipeline:
             "processed_at": datetime.now().isoformat(),
             "total_segments": len(final_segments),
             "flagged_segments": sum(1 for seg in final_segments if seg.get('needs_review', False)),
-            "speaker_mapping": {},
+            "speaker_mapping": speaker_mapping or {},
             "segments": final_segments
         }
         output_file = file_manager.get_output_file_path(self.case_name, "final_transcript.json")
@@ -312,11 +326,17 @@ class OverallPipeline:
             aligned_files = self.step2_ai_processing(chunk_metadata)
             if not aligned_files:
                 raise Exception("沒有成功處理的音訊片段")
-            all_segments = self.step3_merge_chunks(aligned_files)
+            
+            merge_result = self.step3_merge_chunks(aligned_files)
+            all_segments = merge_result["segments"]
+            speaker_mapping = merge_result["speaker_mapping"]
+            
             if not all_segments:
                 raise Exception("沒有可用的轉錄片段")
+            
             final_segments = self.step4_stitch_and_flag(all_segments)
-            output_file = self.save_results(final_segments)
+            output_file = self.save_results(final_segments, speaker_mapping=speaker_mapping)
+            
             duration = datetime.now() - start_time
             print("\n" + "=" * 60)
             print("🎉 完整流程執行成功！")

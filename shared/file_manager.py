@@ -175,10 +175,10 @@ class FileManager:
         except Exception:
             return {"progress": 0, "step": "Error", "message": "Cannot read status"}
 
-    def merge_chunks(self, case_name: str, suffix: str) -> List[Dict]:
+    def merge_chunks(self, case_name: str, suffix: str) -> Dict[str, Any]:
         inter_dir = self.get_intermediate_dir(case_name)
         if not inter_dir.exists():
-            return []
+            return {"segments": [], "speaker_mapping": {}}
         target_key = suffix.replace(".json", "")
         files = []
         for f in inter_dir.glob("*.json"):
@@ -187,14 +187,18 @@ class FileManager:
         if not files:
             if "edited" in suffix:
                 return self.merge_chunks(case_name, "_flagged_for_human.json")
-            return []
+            return {"segments": [], "speaker_mapping": {}}
+
         def sort_key(f):
             for p in f.name.split("_"):
                 if p.isdigit():
                     return int(p)
             return 0
+
         files.sort(key=sort_key)
-        merged_data = []
+        merged_segments = []
+        merged_speaker_mapping = {}
+
         for f in files:
             try:
                 data = self.load_json(f)
@@ -202,14 +206,22 @@ class FileManager:
                 if isinstance(data, list):
                     items = data
                 elif isinstance(data, dict):
+                    # Merge speaker_mapping if present
+                    if "speaker_mapping" in data and isinstance(data["speaker_mapping"], dict):
+                        merged_speaker_mapping.update(data["speaker_mapping"])
+
                     for key in ["segments", "data", "results", "chunks"]:
                         if key in data and isinstance(data[key], list):
                             items = data[key]
                             break
-                merged_data.extend(items)
+                merged_segments.extend(items)
             except Exception:
                 continue
-        return merged_data
+
+        return {
+            "segments": merged_segments,
+            "speaker_mapping": merged_speaker_mapping
+        }
 
 
 file_manager = FileManager()

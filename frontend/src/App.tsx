@@ -536,16 +536,23 @@ function App() {
   };
 
   // ★ 新增：下載處理函式 (解決 window.open 被擋的問題)
-  const handleDownloadFile = (type: string) => {
+  const handleDownloadFile = async (type: string) => {
       if (!selectedCase) return;
       
-      // 建立隱藏的 a 標籤來觸發下載
-      const link = document.createElement('a');
-      link.href = `/api/export/${selectedCase}/${type}`;
-      link.setAttribute('download', `${selectedCase}_${type}.json`); // 建議檔名
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      try {
+          const res = await axios.get(`/api/export/${selectedCase}/${type}`, { responseType: 'blob' });
+          const url = window.URL.createObjectURL(new Blob([res.data]));
+          const link = document.createElement('a');
+          link.href = url;
+          link.setAttribute('download', `${selectedCase}_${type}.json`); // 建議檔名
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          window.URL.revokeObjectURL(url);
+      } catch (err) {
+          console.error("Download failed:", err);
+          alert("下載失敗，請確認是否已登入或權限不足");
+      }
 
       setDownloadAnchor(null); // 關閉選單
   };
