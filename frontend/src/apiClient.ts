@@ -1,5 +1,13 @@
 import axios from 'axios';
 
+axios.interceptors.request.use((config) => {
+  const base = (import.meta.env.BASE_URL || '').replace(/\/$/, '');
+  if (config.url && config.url.startsWith('/api') && base && !config.url.startsWith(base)) {
+    config.url = `${base}${config.url}`;
+  }
+  return config;
+});
+
 export const TOKEN_KEY = 'neuroai_token';
 
 export function setAuthToken(token: string | null): void {

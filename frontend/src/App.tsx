@@ -29,7 +29,7 @@ import { TranscriptItem } from './components/TranscriptItem';
 import { TopBar } from './components/TopBar';
 import { ChunkTimepoints } from './components/ChunkTimepoints';
 
-const STATIC_BASE = `/static`;
+const STATIC_BASE = import.meta.env.BASE_URL.replace(/\/$/, '') + '/static';
 
 type ProjectMember = { user_id: number; real_name: string };
 type ProjectRow = { id: number; name: string; members: ProjectMember[] };

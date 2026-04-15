@@ -16,17 +16,13 @@ services:
     restart: unless-stopped
 
   backend:
-    build:
-      context: .
-      dockerfile: backend/Dockerfile
-      tags:
-        - "momonong/neuroai-backend:${IMAGE_TAG}"
-        - "momonong/neuroai-backend:latest"
-    image: momonong/neuroai-backend:${IMAGE_TAG}
+    # 直接使用你推上 Docker Hub 的 Image
+    image: momonong/neuroai-backend:${IMAGE_TAG:-latest}
     container_name: neuroai_backend
     expose:
       - "8001"
     volumes:
+      # 記得在工作站的同層目錄建立 data 資料夾 (mkdir data)
       - ./data:/app/data
     env_file:
       - .env
@@ -42,13 +38,8 @@ services:
     restart: unless-stopped
 
   whisper:
-    build:
-      context: ./models/whisper
-      dockerfile: Dockerfile
-      tags:
-        - "momonong/neuroai-whisper:${IMAGE_TAG}"
-        - "momonong/neuroai-whisper:latest"
-    image: momonong/neuroai-whisper:${IMAGE_TAG}
+    # 直接使用你推上 Docker Hub 的 Image
+    image: momonong/neuroai-whisper:${IMAGE_TAG:-latest}
     container_name: neuroai_whisper
     expose:
       - "8002"
@@ -71,20 +62,25 @@ services:
     restart: unless-stopped
 
   frontend:
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-      tags:
-        - "momonong/neuroai-frontend:${IMAGE_TAG}"
-        - "momonong/neuroai-frontend:latest"
-    image: momonong/neuroai-frontend:${IMAGE_TAG}
+    # 直接使用你推上 Docker Hub 的 Image
+    image: momonong/neuroai-frontend:${IMAGE_TAG:-latest}
     container_name: neuroai_frontend
-    ports:
-      - "55688:80"
+    # 拔掉對外的 port，改用 expose 讓 Nginx 透過內網溝通
+    expose:
+      - "80"
     depends_on:
       - backend
     restart: unless-stopped
+    networks:
+      - default
+      - global-proxy-net # 加入總機網路
 
 volumes:
   neuroai_pg_data:
   whisper_model_cache:
+
+# 宣告網路
+networks:
+  default:
+  global-proxy-net:
+    external: true
