@@ -1,8 +1,13 @@
 # Core AI 辨識／轉寫依賴（專案根 core/）
 # 從專案根執行 pipeline 時可：pip install -r core/requirements.txt
-# 或與 backend 一起裝：pip install -r requirements.txt
 
+# FastAPI 服務相關
+fastapi
+uvicorn
+pydantic
 python-dotenv
+
+# 原有依賴
 pydub
 OpenCC
 torch
@@ -12,7 +17,6 @@ faster-whisper
 pyannote-audio
 openai
 instructor
-pydantic
 
 # DIARIZATION_BACKEND=whisper_bilstm 時需 Neuro-AI/ 與下列套件
 transformers>=4.36.0

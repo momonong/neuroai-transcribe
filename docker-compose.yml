@@ -70,6 +70,35 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
+  core:
+    build:
+      context: .
+      dockerfile: core/Dockerfile
+      tags:
+        - "momonong/neuroai-core:${IMAGE_TAG}"
+        - "momonong/neuroai-core:latest"
+    image: momonong/neuroai-core:${IMAGE_TAG}
+    container_name: neuroai_core
+    expose:
+      - "8003"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - whisper_model_cache:/app/models_cache
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - MODEL_CACHE_DIR=/app/models_cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
   frontend:
     build:
       context: ./frontend

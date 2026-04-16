@@ -1,4 +1,4 @@
-# Backend 建置 (context: .) 時排除，不將 core 與其他無關檔案送進映像
+# Backend/Core 建置 (context: .) 時排除無關檔案
 .git
 .gitignore
 *.md
@@ -6,11 +6,9 @@
 .env.*
 data/
 models/
-core/
 frontend/
 *.pyc
 __pycache__
 .vscode
 .idea
 docker-compose*.yml
-Dockerfile

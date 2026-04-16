@@ -67,17 +67,25 @@ print(f"Project Root: {PROJECT_ROOT}")
 print(f"Data Directory: {DATA_DIR}")
 
 
-def _run_pipeline_in_subprocess(video_path: str, case_name: str) -> None:
-    """在子流程執行 core pipeline，避免 main 載入 torch/whisper。供 background_tasks 呼叫。"""
-    import subprocess
-
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(PROJECT_ROOT)
-    subprocess.run(
-        [sys.executable, "-m", "core.run_pipeline", video_path, "--case", case_name],
-        cwd=str(PROJECT_ROOT),
-        env=env,
-    )
+def _trigger_core_process(video_path: str, case_name: str) -> None:
+    """向 core 服務發送請求以啟動推理 Pipeline。"""
+    import requests
+    import logging
+    
+    logger = logging.getLogger("uvicorn.error")
+    core_url = "http://core:8003/process"
+    payload = {
+        "case_name": case_name,
+        "file_path": video_path
+    }
+    
+    try:
+        logger.info(f"正在觸發 Core 服務處理: {case_name}")
+        response = requests.post(core_url, json=payload, timeout=10)
+        response.raise_for_status()
+        logger.info(f"Core 服務已接受任務: {response.json()}")
+    except Exception as e:
+        logger.error(f"觸發 Core 服務失敗: {str(e)}")
 
 
 app.add_middleware(
@@ -95,7 +103,7 @@ app.include_router(admin.router)
 app.include_router(projects.router)
 app.include_router(videos.router)
 app.include_router(chunks.router)
-app.include_router(upload.create_upload_router(_run_pipeline_in_subprocess))
+app.include_router(upload.create_upload_router(_trigger_core_process))
 app.include_router(export.router)
 
 if __name__ == "__main__":

@@ -84,7 +84,7 @@ class PipelinePhase2:
             return
 
         project_root = str(config.project_root)
-        cmd_base = [sys.executable, "-m", "core.scripts.whisper_one_chunk"]
+        cmd_base = [sys.executable, "-m", "core.whisper_worker"]
         timeout_sec = 600  # 單一 chunk 最長 10 分鐘
 
         for idx, task in enumerate(todo_tasks):
@@ -148,7 +148,7 @@ class PipelinePhase2:
         elif backend == "placeholder":
             self._run_diarization_placeholder(todo_tasks)
         elif backend == "whisper_bilstm":
-            from core.scripts.model.whisper_bilstm_diarization import (
+            from core.speaker_bilstm.diarization_wrapper import (
                 run_whisper_bilstm_diarization_batch,
             )
 
