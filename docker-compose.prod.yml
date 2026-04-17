@@ -1,4 +1,21 @@
 services:
+  llm-server:
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    container_name: neuroai_llm
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: -m /models/gemma-3-12b-it-q4_0.gguf -c 8192 -ngl 99 --host 0.0.0.0 --port 8000
+    restart: unless-stopped
+
   db:
     image: postgres:18-alpine
     container_name: neuroai_db

@@ -1,29 +1,33 @@
-# 使用官方 GPU 推理映像檔 (PyTorch + CUDA)
-FROM pytorch/pytorch:2.2.0-cuda12.1-cudnn8-runtime
+# 使用驗證成功的最新官方 GPU 推理映像檔
+FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
-# 設定環境變數
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# 1. 設定環境變數：確保輸出即時顯示，並將工作目錄加入路徑
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/app
 
-# 設定工作目錄
 WORKDIR /app
 
-# 安裝系統套件 (ffmpeg 用於音影片處理, build-essential 用於編譯某些套件)
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# 2. 安裝系統套件
+# 增加 libsndfile1 (soundfile 依賴) 與 ffmpeg
+RUN printf 'Acquire::Retries "5";\nAcquire::https::Timeout "240";\nAcquire::http::Timeout "240";' > /etc/apt/apt.conf.d/80-retries && \
+    apt-get update --fix-missing && \
+    apt-get install -y --no-install-recommends \
     ffmpeg \
     build-essential \
+    libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# 複製依賴清單並安裝
-# 注意：這裡複製 core/requirements.txt
+# 3. 複製依賴清單並安裝
+# 僅安裝 Python 應用層套件，不碰 Base Image 預裝好的 torch/cuda
 COPY core/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 複製整個專案內容 (包含 core/, shared/ 等，以支援跨資料夾 import)
+# 4. 複製整個專案
 COPY . .
 
-# 曝露 FastAPI 埠號
+# 5. 曝露 FastAPI 埠號
 EXPOSE 8003
 
-# 啟動指令：執行 core 資料夾下的 main.py
+# 6. 啟動指令：使用 module 方式啟動核心服務
 CMD ["uvicorn", "core.main:app", "--host", "0.0.0.0", "--port", "8003"]

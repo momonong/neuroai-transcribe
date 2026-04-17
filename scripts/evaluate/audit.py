@@ -23,7 +23,7 @@ if str(_ROOT) not in sys.path:
 
 from shared.file_manager import file_manager
 
-from core.scripts.evaluate.metrics_lib import (
+from scripts.evaluate.metrics_lib import (
     aligned_unknown_ratio,
     build_ground_truth_report,
     diar_turns,

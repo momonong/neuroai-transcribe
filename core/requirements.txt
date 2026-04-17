@@ -1,27 +1,21 @@
-# Core AI 辨識／轉寫依賴（專案根 core/）
-# 從專案根執行 pipeline 時可：pip install -r core/requirements.txt
-
-# FastAPI 服務相關
+# FastAPI 服務基礎
 fastapi
 uvicorn
-pydantic
+pydantic>=2.9.0
 python-dotenv
+instructor
+httpx
 
-# 原有依賴
+# 音訊處理與轉寫
 pydub
 OpenCC
-torch
-torchaudio
-torchvision
 faster-whisper
-pyannote-audio
 openai
-instructor
-
-# DIARIZATION_BACKEND=whisper_bilstm 時需 Neuro-AI/ 與下列套件
-transformers>=4.36.0
+transformers>=4.45.0
 librosa>=0.10.0
 soundfile>=0.12.0
+
+# 運算與視覺化依賴
 scikit-learn>=1.3.0
 tqdm>=4.65.0
 matplotlib>=3.7.0

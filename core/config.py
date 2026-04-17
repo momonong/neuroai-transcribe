@@ -42,11 +42,15 @@ class Config:
         # LLM 配置
         self.llm_api_url = os.getenv("LLM_API_URL", "http://localhost:8000/v1")
         self.openai_api_key = os.getenv("OPENAI_API_KEY", "sk-local")
+        self.llm_model_name = os.getenv("LLM_MODEL_NAME", "gemma-3-12b")
         
-        # Docker 環境檢測
+        # Docker 環境檢測：將 localhost 或 127.0.0.1 替換為 Docker 橋接主機 IP
         self.is_docker = os.path.exists("/.dockerenv")
         if self.is_docker:
-            self.llm_api_url = self.llm_api_url.replace("localhost", "host.docker.internal")
+            for host in ["localhost", "127.0.0.1"]:
+                if host in self.llm_api_url:
+                    self.llm_api_url = self.llm_api_url.replace(host, "host.docker.internal")
+                    break
         
         # ==========================================
         # 3. 演算法參數預設值

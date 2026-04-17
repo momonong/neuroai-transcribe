@@ -42,6 +42,10 @@ agent = instructor.patch(client, mode=instructor.Mode.JSON)
 
 
 def analyze_batch_safe(batch_sentences: List[dict]) -> Optional[HealthReport]:
+    """
+    呼叫 LLM 分析一批句子的健康狀況。
+    """
+    print(f"      📡 Connecting to LLM at: {config.llm_api_url}...", end="\r", flush=True)
     context = "\n".join(
         [
             f"[ID {s.get('sentence_id', i)}] {s['text']}"
@@ -70,7 +74,7 @@ def analyze_batch_safe(batch_sentences: List[dict]) -> Optional[HealthReport]:
     for attempt in range(max_retries):
         try:
             resp = agent.chat.completions.create(
-                model="gemma-2-9b-it",
+                model=config.llm_model_name,
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": context},
