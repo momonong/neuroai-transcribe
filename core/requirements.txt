@@ -1,21 +1,22 @@
-# FastAPI 服務基礎
-fastapi
-uvicorn
-pydantic>=2.9.0
-python-dotenv
-instructor
-httpx
+--extra-index-url https://download.pytorch.org/whl/cu129
 
-# 音訊處理與轉寫
-pydub
-OpenCC
-faster-whisper
-openai
-transformers>=4.45.0
-librosa>=0.10.0
-soundfile>=0.12.0
+# 1. 5090 核心驅動 (鎖死你本地能跑的無敵版本)
+torch==2.8.0+cu129
+torchaudio==2.8.0+cu129
+torchvision==0.23.0+cu129
 
-# 運算與視覺化依賴
-scikit-learn>=1.3.0
-tqdm>=4.65.0
-matplotlib>=3.7.0
+# 2. 轉錄模型必備
+faster-whisper==1.2.1
+transformers==4.57.3
+librosa==0.11.0
+soundfile==0.13.1
+openai==2.11.0
+
+# 3. FastAPI 服務與基礎套件
+fastapi==0.125.0
+uvicorn==0.38.0
+pydantic==2.12.5
+python-dotenv 
+pydub==0.25.1
+instructor==1.13.0
+scikit-learn==1.7.2

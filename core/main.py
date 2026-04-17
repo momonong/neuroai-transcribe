@@ -39,11 +39,12 @@ def run_inference_task(case_name: str, file_path: str):
         env = os.environ.copy()
         env["PYTHONPATH"] = str(PROJECT_ROOT)
         
-        # 指令：python -m core.run_pipeline <file_path> --case <case_name>
+        # 指令：python -m core.run_pipeline <file_path> --case <case_name> --force
         cmd = [
             sys.executable, "-m", "core.run_pipeline",
             file_path,
-            "--case", case_name
+            "--case", case_name,
+            "--force"
         ]
         
         logger.info(f" [Executing] 指令: {' '.join(cmd)}")
@@ -64,8 +65,12 @@ def run_inference_task(case_name: str, file_path: str):
     except subprocess.CalledProcessError as e:
         logger.error(f" [Task Failed] 案例 {case_name} 執行失敗。")
         logger.error(f" [Error Output]: {e.stderr}")
+        from shared.file_manager import file_manager
+        file_manager.save_status(case_name, "Error", -1, "Pipeline process crashed unexpectedly.")
     except Exception as e:
         logger.error(f" [System Error] 發生未預期錯誤: {str(e)}")
+        from shared.file_manager import file_manager
+        file_manager.save_status(case_name, "Error", -1, f"System error: {str(e)}")
 
 @app.post("/process")
 async def process_video(request: ProcessRequest, background_tasks: BackgroundTasks):
