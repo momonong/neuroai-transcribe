@@ -5,7 +5,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./models:/models
+      # 指向 Workstation 上的模型下載目錄
+      - ~/hf_models:/models
     deploy:
       resources:
         reservations:
@@ -13,7 +14,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: -m /models/gemma-3-12b-it-q4_0.gguf -c 8192 -ngl 99 --host 0.0.0.0 --port 8000
+    command: -m /models/gemma-3-12b-it-qat-q4_0.gguf -c 8192 -ngl 99 --host 0.0.0.0 --port 8000
     restart: unless-stopped
 
   db:
@@ -69,6 +70,31 @@ services:
       - PYTHONPATH=/app
       - WHISPER_MODEL=large-v3
       - MODEL_CACHE_DIR=/app/models_cache
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    restart: unless-stopped
+
+  core:
+    # 直接使用你推上 Docker Hub 的 Image
+    image: momonong/neuroai-core:${IMAGE_TAG:-latest}
+    container_name: neuroai_core
+    expose:
+      - "8003"
+    volumes:
+      - ./data:/app/data
+      - ./models:/app/models
+      - whisper_model_cache:/app/models_cache
+    env_file:
+      - .env
+    environment:
+      - PYTHONPATH=/app
+      - WHISPER_SERVICE_URL=http://whisper:8002/transcribe
+      - LLM_API_URL=http://neuroai_llm:8000/v1
     deploy:
       resources:
         reservations:

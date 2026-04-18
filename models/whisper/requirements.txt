@@ -1,16 +1,11 @@
---extra-index-url https://download.pytorch.org/whl/cu121
-
-# 1. GPU 運算
-torch==2.1.2+cu121
-
-# 2. Whisper 核心與轉錄
-faster-whisper==1.0.1
+# 1. Whisper 核心與轉錄
+faster-whisper>=1.0.0
 opencc-python-reimplemented
-librosa==0.10.1
-soundfile==0.12.1
+librosa>=0.10.0
+soundfile>=0.12.1
 
-# 3. Web 服務
-fastapi==0.109.0
-uvicorn==0.27.0
-pydantic==2.5.3
+# 2. Web 服務
+fastapi>=0.100.0
+uvicorn>=0.25.0
+pydantic>=2.0.0
 python-dotenv

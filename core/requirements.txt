@@ -1,22 +1,23 @@
 --extra-index-url https://download.pytorch.org/whl/cu121
 
 # 1. 核心驅動 (用於 BiLSTM 語者分離)
-torch==2.1.2+cu121
-torchaudio==2.1.2+cu121
-torchvision==0.16.2+cu121
+# 放寬版本限制，讓 pip 尋找最適合容器環境的版本
+torch>=2.1.0
+torchaudio>=2.1.0
+torchvision>=0.16.0
 
 # 2. 語者分離與音訊處理
-transformers==4.36.2
-librosa==0.10.1
-soundfile==0.12.1
-pydub==0.25.1
+transformers>=4.36.0
+librosa>=0.10.0
+soundfile>=0.12.1
+pydub>=0.25.1
 numpy<2.0.0
 
 # 3. 服務調度與 API 呼叫
-fastapi==0.109.0
-uvicorn==0.27.0
-requests==2.31.0
-instructor==1.13.0
-pydantic==2.5.3
+fastapi>=0.100.0
+uvicorn>=0.25.0
+requests>=2.31.0
+instructor>=1.13.0
+pydantic>=2.0.0
 python-dotenv
 tqdm
