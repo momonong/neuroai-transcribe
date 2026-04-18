@@ -4,17 +4,12 @@ import gc
 import json
 import os
 import pathlib
-import subprocess
+import requests
 import sys
 import time
 from typing import Dict, List
 
 import torch
-
-try:
-    from opencc import OpenCC  # type: ignore
-except Exception:
-    OpenCC = None  # type: ignore[assignment]
 
 from core.config import config
 from core.diarization_placeholders import write_placeholder_diar_from_whisper
@@ -23,9 +18,6 @@ from core.diarization_placeholders import write_placeholder_diar_from_whisper
 def _patch_torch_load_and_safe_globals() -> None:
     """
     針對 PyTorch 2.6+ 的安全載入限制做相容修補。
-
-    注意：此 patch 必須在需要載入 pyannote checkpoint 的情境下可用；
-    若環境未安裝 pyannote，這段會被 try/except 吞掉並繼續。
     """
     try:
         original_load = torch.load
@@ -59,10 +51,10 @@ class PipelinePhase2:
         self.compute_type = "float16" if self.device == "cuda" else "int8"
         self.whisper_model = None
         self.diarization_pipeline = None
-        self.cc = OpenCC("s2twp") if OpenCC is not None else None
+        # Whisper 服務化後，這裡不需要 OpenCC
 
     def _clear_gpu(self):
-        """強制清理 GPU 資源；若清理時發生錯誤僅記錄不拋出，避免 process 直接結束。"""
+        """強制清理 GPU 資源"""
         try:
             gc.collect()
             if torch.cuda.is_available():
@@ -74,7 +66,7 @@ class PipelinePhase2:
 
     def run_whisper_batch(self, tasks: List[Dict]):
         print(
-            f"\n🎧 [Batch Whisper] Starting batch for {len(tasks)} files (one subprocess per chunk)...",
+            f"\n🎧 [Batch Whisper] Calling Whisper Service for {len(tasks)} files...",
             flush=True,
         )
 
@@ -83,52 +75,48 @@ class PipelinePhase2:
             print("   ⏩ All Whisper tasks completed. Skipping.", flush=True)
             return
 
-        project_root = str(config.project_root)
-        cmd_base = [sys.executable, "-m", "core.whisper_worker"]
-        timeout_sec = 600  # 單一 chunk 最長 10 分鐘
+        # 取得 Whisper 服務網址，預設為 docker compose 中的服務名
+        whisper_url = os.getenv("WHISPER_SERVICE_URL", "http://whisper:8002/transcribe")
 
         for idx, task in enumerate(todo_tasks):
             wav_path = task["wav"]
             json_path = task["json"]
             print(
-                f"   [{idx+1}/{len(todo_tasks)}] Transcribing: {os.path.basename(wav_path)}",
+                f"   [{idx+1}/{len(todo_tasks)}] Transcribing via API: {os.path.basename(wav_path)}",
                 flush=True,
             )
+            
             success = False
+            error_msg = ""
             for attempt in range(2):
                 try:
-                    r = subprocess.run(
-                        cmd_base + [wav_path, json_path],
-                        cwd=project_root,
-                        env=os.environ.copy(),
-                        timeout=timeout_sec,
-                        capture_output=True,
-                        text=True,
+                    # 注意：這裡傳遞的是容器內路徑，Whisper 服務必須掛載相同的 data 卷
+                    resp = requests.post(
+                        whisper_url, 
+                        json={"wav_path": str(wav_path)},
+                        timeout=600
                     )
-                    if r.returncode == 0:
-                        if r.stderr:
-                            print(r.stderr, flush=True)
-                        success = True
-                        break
-                    # 子行程可能在寫完 json 後於收尾時崩潰（如 Windows 3221226505），若輸出已存在則視為成功
-                    if os.path.exists(json_path) and os.path.getsize(json_path) > 0:
-                        try:
-                            with open(json_path, encoding="utf-8") as f:
-                                json.load(f)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        if data.get("ok"):
+                            with open(json_path, "w", encoding="utf-8") as f:
+                                json.dump(data["results"], f, ensure_ascii=False, indent=2)
                             success = True
-                            print("   ✓ 輸出已寫入（子行程收尾異常，視為成功）", flush=True)
                             break
-                        except Exception:
-                            pass
-                    print(f"   ⚠️ 子行程 exit code {r.returncode}", flush=True)
-                    if r.stderr:
-                        print(r.stderr, flush=True)
-                except subprocess.TimeoutExpired:
-                    print(f"   ⚠️ 逾時 ({timeout_sec}s)，重試 {attempt+1}/2", flush=True)
+                        else:
+                            error_msg = data.get("message", "Unknown error from service")
+                    else:
+                        error_msg = f"HTTP {resp.status_code}: {resp.text}"
                 except Exception as e:
-                    print(f"   ⚠️ 執行失敗: {e}", flush=True)
+                    error_msg = str(e)
+                
+                print(f"   ⚠️ Attempt {attempt+1} failed: {error_msg}")
+                time.sleep(2)
+
             if not success:
-                print(f"   ❌ 跳過（無法完成）: {os.path.basename(wav_path)}", flush=True)
+                print(f"   ❌ 嚴重錯誤：API 轉錄失敗 {os.path.basename(wav_path)}", flush=True)
+                raise RuntimeError(f"Whisper API failed: {error_msg}")
+                
         print("   🧹 Batch Whisper 結束.", flush=True)
 
     def run_diarization_batch(self, tasks: List[Dict]):
@@ -277,4 +265,3 @@ class PipelinePhase2:
 
         except Exception as e:
             print(f"   ❌ Alignment Failed: {e}", flush=True)
-

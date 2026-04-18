@@ -31,9 +31,6 @@ class Config:
         # 模型快取目錄 (這是全域的，不隨案子變動，所以放這裡)
         self.model_cache_dir = os.getenv("MODEL_CACHE_DIR", str(self.project_root / "models"))
         
-        # 全域資料庫或字典檔目錄 (如果有的話)
-        self.db_dir = self.data_dir / "db"
-        
         # ==========================================
         # 2. AI & 外部服務設定
         # ==========================================
@@ -100,6 +97,12 @@ class Config:
         self.stitch_merge_max_gap_sec = float(
             os.getenv("STITCH_MERGE_MAX_GAP_SEC", "1.5")
         )
+        # 單句最大字數限制
+        self.stitch_max_chars = int(os.getenv("STITCH_MAX_CHARS", "80"))
+        # 軟性字數限制（達到此長度後會更嚴格檢查停頓）
+        self.stitch_soft_max_chars = int(os.getenv("STITCH_SOFT_MAX_CHARS", "40"))
+        # 軟性停頓門檻（達到軟性字數後的停頓門檻，秒）
+        self.stitch_soft_gap_sec = float(os.getenv("STITCH_SOFT_GAP_SEC", "0.5"))
         
         # 測試者名稱 (用於隱藏敏感資訊)
         self.tester_name = os.getenv("TESTER_NAME")
@@ -111,7 +114,6 @@ class Config:
         """確保所有必要的「全域」目錄存在"""
         directories = [
             self.data_dir,
-            self.db_dir,
             Path(self.model_cache_dir)
         ]
         
