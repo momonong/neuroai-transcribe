@@ -5,8 +5,8 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      # 指向 Workstation 上的模型下載目錄
-      - ~/hf_models:/models
+      # 在工作站使用絕對路徑以確保 Docker 穩定讀取
+      - /home/cball/hf_models:/models
     deploy:
       resources:
         reservations:
@@ -14,7 +14,7 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
-    command: -m /models/gemma-3-12b-it-qat-q4_0.gguf -c 8192 -ngl 99 --host 0.0.0.0 --port 8000
+    command: -m /models/gemma-3-12b/gemma-3-12b-it-q4_0.gguf -c 8192 -ngl 99 --host 0.0.0.0 --port 8000
     restart: unless-stopped
 
   db:
@@ -34,13 +34,11 @@ services:
     restart: unless-stopped
 
   backend:
-    # 直接使用你推上 Docker Hub 的 Image
     image: momonong/neuroai-backend:${IMAGE_TAG:-latest}
     container_name: neuroai_backend
     expose:
       - "8001"
     volumes:
-      # 記得在工作站的同層目錄建立 data 資料夾 (mkdir data)
       - ./data:/app/data
     env_file:
       - .env
@@ -54,9 +52,11 @@ services:
       db:
         condition: service_healthy
     restart: unless-stopped
+    networks:
+      - default
+      - global-proxy-net
 
   whisper:
-    # 直接使用你推上 Docker Hub 的 Image
     image: momonong/neuroai-whisper:${IMAGE_TAG:-latest}
     container_name: neuroai_whisper
     expose:
@@ -80,7 +80,6 @@ services:
     restart: unless-stopped
 
   core:
-    # 直接使用你推上 Docker Hub 的 Image
     image: momonong/neuroai-core:${IMAGE_TAG:-latest}
     container_name: neuroai_core
     expose:
@@ -105,10 +104,8 @@ services:
     restart: unless-stopped
 
   frontend:
-    # 直接使用你推上 Docker Hub 的 Image
     image: momonong/neuroai-frontend:${IMAGE_TAG:-latest}
     container_name: neuroai_frontend
-    # 拔掉對外的 port，改用 expose 讓 Nginx 透過內網溝通
     expose:
       - "80"
     depends_on:
@@ -116,13 +113,12 @@ services:
     restart: unless-stopped
     networks:
       - default
-      - global-proxy-net # 加入總機網路
+      - global-proxy-net
 
 volumes:
   neuroai_pg_data:
   whisper_model_cache:
 
-# 宣告網路
 networks:
   default:
   global-proxy-net:

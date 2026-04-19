@@ -15,8 +15,8 @@ print(f"🚀 開始下載模型至: {BASE_MODEL_DIR}")
 print("\n📦 下載 Gemma-3-12b-it-qat-q4_0 GGUF...")
 try:
     hf_hub_download(
-        repo_id="google/gemma-3-12b-it-gguf",
-        filename="gemma-3-12b-it-qat-q4_0.gguf",
+        repo_id="google/gemma-3-12b-it-qat-q4_0-gguf",
+        filename="gemma-3-12b-it-q4_0.gguf",
         local_dir=BASE_MODEL_DIR,
         local_dir_use_symlinks=False
     )
