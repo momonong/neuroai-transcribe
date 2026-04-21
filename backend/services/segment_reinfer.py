@@ -67,8 +67,9 @@ def run_segment_reinfer(
             print(f"Warning: Could not parse exact start/end for '{chunk_filename}', defaulting to 0-60s.")
 
         # 3. Calculate absolute segment times in the original audio
-        absolute_start_sec = (chunk_start_ms / 1000.0) + start_sec
-        absolute_end_sec = (chunk_start_ms / 1000.0) + end_sec
+        # 前端傳來的 start_sec 與 end_sec 已是加上 chunk_offset_sec 的絕對時間，故不需再次加上 chunk_start_ms。
+        absolute_start_sec = float(start_sec)
+        absolute_end_sec = float(end_sec)
 
         # 4. Call Whisper service via HTTP (Docker microservice)
         import urllib.request

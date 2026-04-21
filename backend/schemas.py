@@ -53,8 +53,8 @@ class SegmentReinferRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     filename: str = Field(..., min_length=1, description="chunk 檔相對路徑，與 /api/temp/save 相同")
-    start_sec: float = Field(..., ge=0, description="相對於該 chunk 時間軸的起始秒")
-    end_sec: float = Field(..., ge=0, description="相對於該 chunk 時間軸的結束秒")
+    start_sec: float = Field(..., ge=0, description="相對於原始音檔的絕對起始秒數（與前端 segment.start 一致）")
+    end_sec: float = Field(..., ge=0, description="相對於原始音檔的絕對結束秒數（與前端 segment.end 一致）")
     sentence_id: Optional[float] = Field(None, description="前端 segment sentence_id，供實作端對位")
 
     @model_validator(mode="after")
