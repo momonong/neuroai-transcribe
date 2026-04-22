@@ -236,3 +236,9 @@ __marimo__/
 .vscode
 .idea
 .cursor
+
+# DATA EDA results
+EDA_Results_ASD_Clinical.csv
+Subject_Mapping_Key.csv
+EDA_Clinical_Advanced_Results.csv 
+Subject_Advanced_Mapping_Key.csv 

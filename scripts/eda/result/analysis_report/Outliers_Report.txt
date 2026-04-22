@@ -1,0 +1,17 @@
+極端個案分析報告 (Outliers Report)
+========================================
+- 【speech_ratio】
+  高極端 (>=0.65): subject02, subject18
+  低極端 (<=0.18): subject15, subject19
+- 【fragmentation_ratio】
+  高極端 (>=0.67): subject15, subject21
+  低極端 (<=0.47): subject07, subject13
+- 【num_long_pauses】
+  高極端 (>=115.00): subject09, subject10
+  低極端 (<=40.00): subject01, subject19
+- 【energy_burst_ratio】
+  高極端 (>=0.02): subject01, subject18
+  低極端 (<=0.02): subject02, subject03
+- 【std_pitch_hz】
+  高極端 (>=129.25): subject07, subject12
+  低極端 (<=93.46): subject08, subject19
