@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type MouseEvent } from 'react';
 import axios from 'axios';
-import { Edit, DeleteOutline, MoreVert } from '@mui/icons-material';
+import { Edit, DeleteOutline, MoreVert, CloudSync } from '@mui/icons-material';
 import {
   Box,
   Button,
@@ -217,6 +217,24 @@ export function AdminProjectDialog({ open, onClose, currentUserId, onToast }: Pr
       const ax = e as { response?: { data?: { detail?: string } } };
       onToast(ax.response?.data?.detail ?? '更新帳號狀態失敗', 'error');
       await refreshAll();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleSync = async () => {
+    setBusy(true);
+    try {
+      const { data } = await axios.post('/api/admin/sync');
+      const { added, moved_to_recycle_bin } = data.details;
+      onToast(
+        `同步完成！新增 ${added} 個任務，移至回收站 ${moved_to_recycle_bin} 個。`,
+        'success'
+      );
+      await refreshAll();
+    } catch (e: unknown) {
+      const ax = e as { response?: { data?: { detail?: string } } };
+      onToast(ax.response?.data?.detail ?? '同步失敗', 'error');
     } finally {
       setBusy(false);
     }
@@ -461,8 +479,19 @@ export function AdminProjectDialog({ open, onClose, currentUserId, onToast }: Pr
           </Grid>
         </Grid>
       </DialogContent>
-      <DialogActions sx={{ px: 3, py: 2 }}>
-        <Button onClick={onClose}>關閉</Button>
+      <DialogActions sx={{ px: 3, py: 2, justifyContent: 'space-between' }}>
+        <Button
+          startIcon={<CloudSync />}
+          onClick={handleSync}
+          disabled={busy}
+          color="info"
+          size="small"
+        >
+          同步磁碟資料
+        </Button>
+        <Button onClick={onClose} variant="outlined">
+          關閉
+        </Button>
       </DialogActions>
     </Dialog>
   );

@@ -2,13 +2,14 @@
 管理員 API：專案與使用者／專案成員管理、帳號啟停。
 """
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from database import get_db
 from deps import require_admin
-from models import Project, ProjectUserLink, User
+from models import Project, ProjectUserLink, User, Task
 from schemas import AdminCreateProjectBody, AdminUpdateProjectBody
+from sync_disk_tasks import sync_all_cases
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
@@ -122,6 +123,28 @@ def delete_project(
     p = db.get(Project, project_id)
     if p is None:
         raise HTTPException(status_code=404, detail="專案不存在")
+
+    # 建立或尋找「回收站」專案
+    recycle_bin_name = "Deleted tasks"
+    recycle_bin = db.scalar(select(Project).where(Project.name == recycle_bin_name))
+    if recycle_bin is None:
+        recycle_bin = Project(
+            name=recycle_bin_name,
+            description="存放被刪除專案中的任務，防止數據永久流失。",
+        )
+        db.add(recycle_bin)
+        db.flush()  # 取得 recycle_bin.id
+
+    if recycle_bin.id == project_id:
+        raise HTTPException(status_code=400, detail="不可刪除回收站專案")
+
+    # 轉移任務到回收站
+    db.execute(
+        update(Task)
+        .where(Task.project_id == project_id)
+        .values(project_id=recycle_bin.id)
+    )
+
     db.delete(p)
     db.commit()
     return {"ok": True}
@@ -234,3 +257,15 @@ def deactivate_user(
         "real_name": target.real_name,
         "is_active": target.is_active,
     }
+
+
+@router.post("/sync")
+def sync_data(db: Session = Depends(get_db), _: User = Depends(require_admin)):
+    """
+    手動觸發磁碟與資料庫同步。
+    """
+    try:
+        result = sync_all_cases(db)
+        return {"ok": True, "details": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"同步失敗: {str(e)}")

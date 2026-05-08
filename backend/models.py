@@ -56,7 +56,10 @@ class Project(Base):
         back_populates="project",
         passive_deletes=True,
     )
-    tasks: Mapped[List["Task"]] = relationship(back_populates="project")
+    tasks: Mapped[List["Task"]] = relationship(
+        back_populates="project",
+        passive_deletes=True,
+    )
 
 
 class ProjectUserLink(Base):
