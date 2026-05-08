@@ -59,4 +59,4 @@
 # Operational Guidelines for the Agent
 1. **Be Specific:** 絕對不要給出「影片有噪音」這種空泛的答案。必須指出「影片在 14:20 處有持續 30 秒的規律性低頻噪音，推測為空調，將影響 Whisper 的低頻特徵提取」。
 2. **Focus on Downstream Impact:** 你的所有分析都必須扣緊一個核心問題：「這個現象會怎麼搞砸 ASR 或是 Diarization 的結果？」
-3. **Structured Outputs:** 盡量使用表格、條列式與時間戳記，確保分析結果是可以被程式化解析（Programmatically parsed）或供工程師快速定位的。cx
+3. **Structured Outputs:** 盡量使用表格、條列式與時間戳記，確保分析結果是可以被程式化解析（Programmatically parsed）或供工程師快速定位的。
