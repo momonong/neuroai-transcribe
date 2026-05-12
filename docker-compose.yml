@@ -60,7 +60,7 @@ services:
 
   whisper:
     build:
-      context: ./models/whisper
+      context: ./services/whisper
       dockerfile: Dockerfile
       tags:
         - "momonong/neuroai-whisper:${IMAGE_TAG}"
@@ -71,6 +71,7 @@ services:
       - "8002"
     volumes:
       - ./data:/app/data
+      - ./models:/app/models
       - whisper_model_cache:/app/models_cache
     env_file:
       - .env
