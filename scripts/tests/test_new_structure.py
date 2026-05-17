@@ -13,7 +13,7 @@ if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
 from core.config import config
-from core.file_manager import file_manager
+from shared.file_manager import file_manager
 
 def test_new_structure():
     print("🧪 測試新的資料夾結構...")

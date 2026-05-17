@@ -10,10 +10,13 @@ description = "NeuroAI 轉錄：編輯介面 (backend/frontend) + AI 核心 (cor
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
+    "accelerate>=1.13.0",
     "librosa>=0.11.0",
     "numpy>=2.2.6",
+    "openai-whisper>=20250625",
     "pandas>=2.3.3",
     "torchcodec>=0.12.0",
+    "transformers>=5.8.1",
 ]
 
 [tool.setuptools.packages.find]
