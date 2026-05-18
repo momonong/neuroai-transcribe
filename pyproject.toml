@@ -12,9 +12,13 @@ requires-python = ">=3.10"
 dependencies = [
     "accelerate>=1.13.0",
     "librosa>=0.11.0",
+    "matplotlib>=3.10.9",
+    "nara-wpe>=0.0.11",
     "numpy>=2.2.6",
     "openai-whisper>=20250625",
     "pandas>=2.3.3",
+    "pyannote-audio>=4.0.4",
+    "soundfile>=0.13.1",
     "torchcodec>=0.12.0",
     "transformers>=5.8.1",
 ]
