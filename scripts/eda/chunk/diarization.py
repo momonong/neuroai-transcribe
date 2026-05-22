@@ -125,7 +125,20 @@ def run_diarization(pipeline, temp_wav, num_speakers=None, min_speakers=None, ma
             kwargs["max_speakers"] = max_speakers
 
     print(f"🧠 進行聲紋特徵抽取與分群... kwargs={kwargs}")
-    raw_output = pipeline(str(temp_wav), **kwargs)
+    
+    # Workaround for pyannote.audio / torchcodec loading issues on Windows
+    waveform, sr = sf.read(str(temp_wav), dtype='float32')
+    if waveform.ndim == 1:
+        waveform = waveform.reshape(1, -1)
+    else:
+        waveform = waveform.T
+    
+    audio_in_memory = {
+        "waveform": torch.from_numpy(waveform),
+        "sample_rate": sr
+    }
+
+    raw_output = pipeline(audio_in_memory, **kwargs)
     annotation = resolve_annotation(raw_output)
     return raw_output, annotation
 
@@ -228,6 +241,87 @@ def draw_interaction_timeline(segments, total_duration, output_dir, subject_id, 
     plt.close(fig)
 
     print(f"✅ 時間軸圖表已儲存至: {png_path}")
+    return str(png_path)
+
+
+def draw_comparison_timeline(pred_segments, ref_segments, total_duration, output_dir, subject_id, title_suffix=""):
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(16, 7), sharex=True)
+
+    # Prepare color mapping for Reference
+    ref_speaker_names = sorted(list({seg["speaker"] for seg in ref_segments if seg.get("speaker")}))
+    ref_speaker_to_y = {speaker: idx * 10 for idx, speaker in enumerate(ref_speaker_names)}
+    
+    cmap = plt.get_cmap("tab10")
+    ref_colors = {spk: cmap(i % 10) for i, spk in enumerate(ref_speaker_names)}
+
+    # Prepare color mapping for Prediction
+    pred_speaker_names = sorted(list({seg["speaker"] for seg in pred_segments}))
+    pred_speaker_to_y = {speaker: idx * 10 for idx, speaker in enumerate(pred_speaker_names)}
+    
+    pred_colors = {spk: cmap(i % 10) for i, spk in enumerate(pred_speaker_names)}
+
+    # -- Top Subplot: Ground Truth (Reference) --
+    for seg in ref_segments:
+        speaker = seg.get("speaker")
+        if not speaker:
+            continue
+        color = ref_colors[speaker]
+        y_pos = ref_speaker_to_y[speaker]
+        duration = max(0.0, seg["end"] - seg["start"])
+        rect = patches.Rectangle(
+            (seg["start"], y_pos),
+            duration,
+            8,
+            linewidth=1,
+            edgecolor="none",
+            facecolor=color
+        )
+        ax1.add_patch(rect)
+
+    if ref_speaker_to_y:
+        ax1.set_yticks([y + 4 for y in ref_speaker_to_y.values()])
+        ax1.set_yticklabels(list(ref_speaker_to_y.keys()))
+        ax1.set_ylim(-5, max([0] + list(ref_speaker_to_y.values())) + 15)
+    ax1.set_title(f"Ground Truth (Reference) - {subject_id}{title_suffix}")
+    ax1.grid(True, axis="x", linestyle="--", alpha=0.5)
+
+    # -- Bottom Subplot: Prediction --
+    for seg in pred_segments:
+        speaker = seg["speaker"]
+        color = pred_colors[speaker]
+        y_pos = pred_speaker_to_y[speaker]
+        rect = patches.Rectangle(
+            (seg["start"], y_pos),
+            seg["duration"],
+            8,
+            linewidth=1,
+            edgecolor="none",
+            facecolor=color
+        )
+        ax2.add_patch(rect)
+
+    if pred_speaker_to_y:
+        ax2.set_yticks([y + 4 for y in pred_speaker_to_y.values()])
+        ax2.set_yticklabels(list(pred_speaker_to_y.keys()))
+        ax2.set_ylim(-5, max([0] + list(pred_speaker_to_y.values())) + 15)
+    ax2.set_xlabel("Time (seconds)")
+    ax2.set_title(f"Prediction (Pyannote) - {subject_id}{title_suffix}")
+    ax2.grid(True, axis="x", linestyle="--", alpha=0.5)
+
+    x_max = max(total_duration, 
+                max((s["end"] for s in pred_segments), default=0),
+                max((s["end"] for s in ref_segments), default=0))
+    ax1.set_xlim(0, x_max)
+    
+    plt.tight_layout()
+
+    out_dir = Path(output_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    png_path = out_dir / f"{subject_id}_diarization_comparison.png"
+    plt.savefig(png_path, dpi=300)
+    plt.close(fig)
+
+    print(f"✅ 比較圖表已儲存至: {png_path}")
     return str(png_path)
 
 
@@ -484,6 +578,15 @@ def main():
         if args.reference:
             print(f"\n📚 載入 reference: {args.reference}")
             ref_segments = load_reference(args.reference)
+
+            draw_comparison_timeline(
+                pred_segments=segments,
+                ref_segments=ref_segments,
+                total_duration=(actual_start + actual_duration),
+                output_dir=args.plot_dir,
+                subject_id=subject_id,
+                title_suffix=title_suffix
+            )
 
             eval_result = evaluate_diarization(segments, ref_segments)
             eval_payload = {
